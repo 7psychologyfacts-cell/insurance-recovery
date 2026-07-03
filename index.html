@@ -1,0 +1,648 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Insurance Recovery – Shalby Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <style>
+        * { margin:0; padding:0; box-sizing:border-box; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        body { background: #f0f4f8; display:flex; justify-content:center; align-items:flex-start; min-height:100vh; padding:20px; }
+        .dashboard { width:100%; max-width:1400px; background:#ffffff; border-radius:16px; box-shadow:0 20px 40px rgba(0,0,0,0.08); overflow:hidden; }
+        .header { background: linear-gradient(135deg, #0f2b4b 0%, #1b4a7a 100%); color:white; padding:24px 32px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:16px; }
+        .header h1 { font-size:1.7rem; font-weight:600; letter-spacing:0.5px; }
+        .status { background: #ffffff20; padding:8px 20px; border-radius:30px; font-size:0.9rem; backdrop-filter:blur(10px); }
+        .status-circle { display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:8px; background:#ffc107; }
+        .status-circle.active { background:#28a745; }
+        .status-circle.busy { background:#e67e22; }
+        .status-circle.error { background:#e74c3c; }
+        .tabs { display:flex; background:#f8fafd; border-bottom:1px solid #e9edf4; padding:0 32px; gap:4px; overflow-x:auto; }
+        .tab { padding:14px 24px; cursor:pointer; font-weight:500; color:#64748b; border-bottom:3px solid transparent; transition:0.2s; white-space:nowrap; }
+        .tab.active { color:#1b4a7a; border-bottom-color:#1b4a7a; background:#ffffff; border-radius:8px 8px 0 0; }
+        .tab:hover { color:#1b4a7a; }
+        .tab-content { display:none; padding:28px 32px; }
+        .tab-content.active { display:block; }
+        .config-grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap:24px; margin-bottom:24px; }
+        .card { background:#f8fafd; border-radius:14px; padding:24px; border:1px solid #e9edf4; transition:0.2s; }
+        .card:hover { border-color:#bdd3f0; }
+        .card h3 { font-size:1.1rem; color:#0f2b4b; margin-bottom:18px; display:flex; align-items:center; gap:8px; }
+        .form-group { margin-bottom:16px; }
+        .form-group label { display:block; font-weight:500; color:#2c3e50; margin-bottom:6px; font-size:0.9rem; }
+        .form-group input, .form-group select, .form-group textarea { width:100%; padding:10px 14px; border:1px solid #dce3eb; border-radius:8px; font-size:0.9rem; background:#ffffff; }
+        .form-group input:focus, .form-group select:focus, .form-group textarea:focus { outline:none; border-color:#1b4a7a; box-shadow:0 0 0 3px rgba(27,74,122,0.1); }
+        .form-group small { display:block; margin-top:4px; color:#94a3b8; font-size:0.78rem; }
+        .form-row { display:flex; gap:12px; }
+        .form-row > * { flex:1; }
+        .checkbox-group { display:flex; flex-wrap:wrap; gap:8px; margin-top:4px; }
+        .checkbox-item { background:#eef2f6; padding:6px 12px; border-radius:6px; display:flex; align-items:center; gap:6px; font-size:0.85rem; cursor:pointer; }
+        .btn { padding:10px 24px; border-radius:8px; font-weight:600; font-size:0.9rem; border:none; cursor:pointer; transition:0.2s; display:inline-flex; align-items:center; gap:6px; margin-right:8px; margin-top:8px; }
+        .btn-primary { background:#1b4a7a; color:white; }
+        .btn-primary:hover { background:#163d64; }
+        .btn-primary:disabled { background:#93a9c0; cursor:not-allowed; }
+        .btn-outline { background:transparent; border:1px solid #dce3eb; color:#2c3e50; }
+        .btn-outline:hover { background:#f1f4f9; }
+        .btn-danger { background:#e74c3c; color:white; }
+        .progress-container { background:#e9edf4; border-radius:10px; height:12px; margin:16px 0; overflow:hidden; }
+        .progress-bar { height:100%; width:0%; background:linear-gradient(90deg, #1b4a7a, #2e86c1); border-radius:10px; transition: width 0.3s; }
+        .stats-row { display:flex; gap:24px; flex-wrap:wrap; margin-bottom:24px; }
+        .stat-card { background:#f8fafd; border:1px solid #e9edf4; border-radius:12px; padding:16px 20px; flex:1; min-width:120px; text-align:center; }
+        .stat-card .stat-value { font-size:2rem; font-weight:700; color:#0f2b4b; }
+        .stat-card .stat-label { font-size:0.85rem; color:#64748b; margin-top:4px; }
+        .log-table-wrapper { max-height:300px; overflow-y:auto; border:1px solid #e9edf4; border-radius:10px; margin-top:12px; }
+        .log-table { width:100%; border-collapse:collapse; font-size:0.85rem; }
+        .log-table th { background:#f1f5f9; padding:10px; text-align:left; font-weight:600; color:#1e293b; position:sticky; top:0; }
+        .log-table td { padding:8px 10px; border-bottom:1px solid #e9edf4; }
+        .sheet-preview { max-height:400px; overflow:auto; border:1px solid #e9edf4; border-radius:10px; }
+        .sheet-preview table { width:100%; border-collapse:collapse; font-size:0.8rem; }
+        .sheet-preview th { background:#1b4a7a; color:white; padding:8px; position:sticky; top:0; }
+        .sheet-preview td { padding:6px 8px; border-bottom:1px solid #e9edf4; }
+        .filter-section textarea { width:100%; height:100px; margin-top:8px; }
+        .msg-banner { padding:10px 14px; border-radius:8px; font-size:0.85rem; margin-bottom:14px; display:none; }
+        .msg-banner.show { display:block; }
+        .msg-banner.err { background:#fdecea; color:#b3261e; border:1px solid #f5c2c0; }
+        .msg-banner.ok { background:#eafaf0; color:#1e7e34; border:1px solid #bfe8cd; }
+
+        .robot-btn { position:fixed; bottom:30px; right:30px; width:65px; height:65px; background: #ff6f61; border-radius:50%; box-shadow:0 8px 20px rgba(0,0,0,0.2); cursor:pointer; display:flex; align-items:center; justify-content:center; font-size:2.2rem; z-index:999; transition:0.3s; border: none; }
+        .robot-btn:hover { transform:scale(1.1); }
+        .robot-popup { position:fixed; bottom:110px; right:30px; width:380px; max-height:550px; background:white; border-radius:20px; box-shadow:0 20px 50px rgba(0,0,0,0.2); z-index:1000; display:none; flex-direction:column; overflow:hidden; border:2px solid #ff6f61; }
+        .robot-popup.active { display:flex; }
+        .robot-header { background: #ff6f61; color:white; padding:16px; display:flex; align-items:center; gap:10px; font-weight:600; }
+        .robot-body { padding:16px; overflow-y:auto; max-height:400px; background:#fafafa; }
+        .robot-body .ai-chat-box { height:200px; overflow-y:auto; background:white; border-radius:10px; padding:10px; margin-bottom:10px; font-size:0.85rem; }
+        .robot-body .ai-chat-box .msg { margin-bottom:8px; }
+        .robot-body .ai-chat-box .msg.me { color:#1b4a7a; font-weight:600; }
+        .robot-body .ai-chat-box .msg.bot { color:#2c3e50; }
+        .robot-body .form-group { margin-bottom:12px; }
+        .close-btn { margin-left:auto; background:none; border:none; color:white; font-size:1.5rem; cursor:pointer; }
+
+        .chart-controls { display:flex; gap:15px; align-items:center; margin-bottom:20px; flex-wrap:wrap; }
+        .chart-row { display:flex; gap:20px; flex-wrap:wrap; }
+        .chart-box { flex:1; min-width:300px; background:#f8fafd; border-radius:14px; padding:20px; border:1px solid #e9edf4; margin-bottom:20px; }
+        @media (max-width:600px) { .header h1 { font-size:1.3rem; } .config-grid { grid-template-columns:1fr; } }
+    </style>
+</head>
+<body>
+<div class="dashboard">
+    <div class="header">
+        <h1>🛡️ Insurance Recovery Pipeline</h1>
+        <div class="status" id="statusIndicator"><span class="status-circle active" id="statusCircle"></span> <span id="statusText">तैयार</span></div>
+    </div>
+
+    <div class="tabs">
+        <div class="tab active" data-tab="settings">⚙️ सेटिंग्स</div>
+        <div class="tab" data-tab="live">📡 लाइव मॉनिटर</div>
+        <div class="tab" data-tab="sheet">📊 शीट प्रीव्यू</div>
+        <div class="tab" data-tab="filters">🛡️ फ़िल्टर</div>
+        <div class="tab" data-tab="analytics">📈 एनालिटिक्स</div>
+    </div>
+
+    <!-- सेटिंग्स टैब -->
+    <div class="tab-content active" id="settings">
+        <div class="msg-banner" id="settingsBanner"></div>
+        <div class="config-grid">
+            <div class="card">
+                <h3>🔑 Google Services</h3>
+                <div class="form-group">
+                    <label>Gemini API Key</label>
+                    <input type="password" id="apiKey" placeholder="server env se load ho sakti hai, ya yahan daalein">
+                    <small id="apiKeyHint"></small>
+                </div>
+                <div class="form-group"><label>Model</label>
+                    <select id="geminiModel">
+                        <option value="gemini-3.1-flash-lite" selected>Gemini 3.1 Flash‑Lite</option>
+                        <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
+                        <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
+                    </select>
+                </div>
+                <div class="form-group"><label>Sheet URL</label><input id="sheetUrl"></div>
+                <div class="form-group"><label>वर्कशीट नाम</label><input id="worksheetName" value="Sheet1"></div>
+                <div class="form-row">
+                    <div class="form-group"><label>From (DD-Mon-YYYY)</label><input id="fromDate" placeholder="01-Jun-2026"></div>
+                    <div class="form-group"><label>To (DD-Mon-YYYY)</label><input id="toDate" placeholder="18-Jun-2026"></div>
+                </div>
+            </div>
+            <div class="card">
+                <h3>📬 IMAP कॉन्फ़िगरेशन</h3>
+                <div class="form-row">
+                    <div class="form-group"><label>होस्ट</label><input id="imapHost"></div>
+                    <div class="form-group"><label>पोर्ट</label><input id="imapPort" type="number" value="993"></div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group"><label>यूज़र</label><input id="imapUser"></div>
+                    <div class="form-group"><label>पासवर्ड</label><input type="password" id="imapPass" placeholder="server env se load ho sakta hai"></div>
+                </div>
+                <div class="form-group"><label>फ़ोल्डर चुनें</label><div class="checkbox-group" id="folderCheckboxes"></div></div>
+                <button class="btn btn-primary" onclick="saveSettings()">💾 सेटिंग्स सेव करें (browser me)</button>
+                <button class="btn btn-outline" onclick="loadDefaults()">↺ सर्वर डिफ़ॉल्ट लोड करें</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- लाइव मॉनिटर टैब -->
+    <div class="tab-content" id="live">
+        <div class="msg-banner" id="liveBanner"></div>
+        <div class="stats-row">
+            <div class="stat-card"><div class="stat-value" id="processedCount">0</div><div class="stat-label">प्रोसेस्ड</div></div>
+            <div class="stat-card"><div class="stat-value" id="skippedCount">0</div><div class="stat-label">स्किप्ड</div></div>
+            <div class="stat-card"><div class="stat-value" id="errorCount">0</div><div class="stat-label">एरर्स</div></div>
+        </div>
+        <div class="progress-container"><div class="progress-bar" id="progressBar"></div></div>
+        <div style="display:flex; gap:12px; margin-bottom:16px;">
+            <button class="btn btn-primary" id="startBtn" onclick="startPipeline()">▶️ पाइपलाइन चलाएँ</button>
+            <button class="btn btn-outline" onclick="stopPipeline()">⏹️ रोकें</button>
+        </div>
+        <p style="font-size:0.8rem;color:#94a3b8;margin-bottom:10px;">नोट: पाइपलाइन सर्वर पर एक ही रिक्वेस्ट में पूरी चलती है — बहुत सारी ईमेल होने पर इसमें कुछ मिनट लग सकते हैं, कृपया tab band na karein.</p>
+        <h3>📋 ईमेल लॉग</h3>
+        <div class="log-table-wrapper">
+            <table class="log-table" id="logTable"><thead><tr><th>Subject</th><th>From</th><th>Company</th><th>Amount</th><th>Status</th><th>Date</th></tr></thead><tbody></tbody></table>
+        </div>
+    </div>
+
+    <!-- शीट प्रीव्यू टैब -->
+    <div class="tab-content" id="sheet">
+        <div class="msg-banner" id="sheetBanner"></div>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; flex-wrap:wrap; gap:10px;">
+            <h3>📋 Google Sheet डेटा प्रीव्यू</h3>
+            <div>
+                <button class="btn btn-outline" onclick="renderSheetPreview()">🔄 रीफ़्रेश</button>
+                <button class="btn btn-outline" onclick="downloadCSV()">📥 CSV डाउनलोड</button>
+                <button class="btn btn-outline" onclick="downloadPDF()">📄 PDF डाउनलोड</button>
+            </div>
+        </div>
+        <div class="sheet-preview" id="sheetPreview"></div>
+    </div>
+
+    <!-- फ़िल्टर टैब -->
+    <div class="tab-content" id="filters">
+        <div class="card">
+            <h3>🛡️ कस्टम फ़िल्टर (Blacklist)</h3>
+            <div class="form-group"><label>Subject ब्लैकलिस्ट (हर कीवर्ड अलग लाइन में)</label><textarea id="subjectBlacklist"></textarea></div>
+            <div class="form-group"><label>Sender ब्लैकलिस्ट</label><textarea id="senderBlacklist"></textarea></div>
+            <button class="btn btn-primary" onclick="saveFilters()">💾 फ़िल्टर सेव करें</button>
+            <p style="font-size:0.78rem;color:#94a3b8;margin-top:8px;">यह फ़िल्टर अगली बार "पाइपलाइन चलाएँ" दबाने पर पाइपलाइन को भेजा जाएगा — matching mail ko सर्वर side पर skip कर दिया जाता है।</p>
+        </div>
+    </div>
+
+    <!-- एनालिटिक्स टैब -->
+    <div class="tab-content" id="analytics">
+        <div class="msg-banner" id="analyticsBanner"></div>
+        <div class="chart-controls">
+            <div class="form-group" style="margin:0;">
+                <label>यूनिट</label>
+                <select id="unitFilter" onchange="applyFilters()"><option value="All">सभी</option></select>
+            </div>
+            <div class="form-group" style="margin:0;">
+                <label>कंपनी</label>
+                <select id="companyFilter" onchange="applyFilters()"><option value="All">सभी</option></select>
+            </div>
+            <div class="form-group" style="margin:0;">
+                <label>चार्ट टाइप</label>
+                <select id="chartTypeSelector" onchange="applyFilters()">
+                    <option value="bar" selected>बार चार्ट</option>
+                    <option value="pie">पाई चार्ट</option>
+                </select>
+            </div>
+            <button class="btn btn-outline" onclick="loadAnalyticsData()" style="margin:0;">🔄 डेटा लोड करें</button>
+        </div>
+        <div class="chart-row">
+            <div class="chart-box">
+                <h3>📊 कंपनी-वार बकाया/कटौती</h3>
+                <canvas id="comparisonChart" height="80"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- फ़्लोटिंग रोबोट बटन और पॉपअप -->
+<button class="robot-btn" id="robotButton" onclick="toggleRobot()">🤖</button>
+<div class="robot-popup" id="robotPopup">
+    <div class="robot-header">
+        <span>🤖 AI दोस्त – रोबो चाचा</span>
+        <button class="close-btn" onclick="toggleRobot()">✕</button>
+    </div>
+    <div class="robot-body">
+        <div class="ai-chat-box" id="chatBox"></div>
+        <div class="form-row">
+            <input type="text" id="chatInput" placeholder="पूछो कुछ भी...">
+            <button class="btn btn-primary" onclick="sendChat()" style="margin:0;">भेजें</button>
+        </div>
+        <hr style="margin:14px 0;">
+        <h4>✉️ ऑटो रिप्लाई जनरेटर</h4>
+        <div class="form-group"><input id="replyCompany" placeholder="कंपनी का नाम"></div>
+        <div class="form-group"><input id="replyAmount" placeholder="राशि"></div>
+        <button class="btn btn-primary" onclick="generateReply()">ड्राफ़्ट बनाएँ</button>
+        <textarea id="replyOutput" rows="4" readonly style="margin-top:10px;"></textarea>
+        <button class="btn btn-outline" onclick="analyzePriority()" style="margin-top:8px;">🧠 स्मार्ट प्रायोरिटी</button>
+        <div id="priorityResult" style="margin-top:8px;"></div>
+    </div>
+</div>
+
+<script>
+    // ---------- डिफ़ॉल्ट फ़ोल्डर लिस्ट (server /api/defaults से भी आ सकती है) ----------
+    let serverDefaults = {};
+    let lastSheetData = null; // { headers, rows } — CSV/PDF/analytics ke liye reuse hota hai
+
+    function setStatus(state, text) {
+        const circle = document.getElementById('statusCircle');
+        circle.className = 'status-circle ' + state;
+        document.getElementById('statusText').textContent = text;
+    }
+
+    function showBanner(id, type, text) {
+        const el = document.getElementById(id);
+        el.className = 'msg-banner show ' + type;
+        el.textContent = text;
+    }
+    function hideBanner(id) {
+        document.getElementById(id).className = 'msg-banner';
+    }
+
+    function renderFolders(folders, checkedFolders) {
+        const container = document.getElementById('folderCheckboxes');
+        container.innerHTML = '';
+        (folders || []).forEach(folder => {
+            const item = document.createElement('label');
+            item.className = 'checkbox-item';
+            const checked = !checkedFolders || checkedFolders.includes(folder);
+            item.innerHTML = `<input type="checkbox" value="${folder}" ${checked ? 'checked' : ''}> ${folder}`;
+            container.appendChild(item);
+        });
+    }
+
+    function getFormSettings() {
+        return {
+            geminiApiKey: document.getElementById('apiKey').value,
+            geminiModel: document.getElementById('geminiModel').value,
+            sheetUrl: document.getElementById('sheetUrl').value,
+            worksheetName: document.getElementById('worksheetName').value,
+            fromDate: document.getElementById('fromDate').value,
+            toDate: document.getElementById('toDate').value,
+            imapHost: document.getElementById('imapHost').value,
+            imapPort: document.getElementById('imapPort').value,
+            imapUser: document.getElementById('imapUser').value,
+            imapPass: document.getElementById('imapPass').value,
+            folders: Array.from(document.querySelectorAll('#folderCheckboxes input:checked')).map(cb => cb.value),
+            subjectBlacklist: document.getElementById('subjectBlacklist').value,
+            senderBlacklist: document.getElementById('senderBlacklist').value,
+        };
+    }
+
+    function applyFormSettings(s) {
+        document.getElementById('apiKey').value = s.geminiApiKey || '';
+        document.getElementById('geminiModel').value = s.geminiModel || 'gemini-3.1-flash-lite';
+        document.getElementById('sheetUrl').value = s.sheetUrl || '';
+        document.getElementById('worksheetName').value = s.worksheetName || 'Sheet1';
+        document.getElementById('fromDate').value = s.fromDate || '';
+        document.getElementById('toDate').value = s.toDate || '';
+        document.getElementById('imapHost').value = s.imapHost || '';
+        document.getElementById('imapPort').value = s.imapPort || '993';
+        document.getElementById('imapUser').value = s.imapUser || '';
+        document.getElementById('imapPass').value = s.imapPass || '';
+        document.getElementById('subjectBlacklist').value = s.subjectBlacklist || '';
+        document.getElementById('senderBlacklist').value = s.senderBlacklist || '';
+        renderFolders(s.folders || (serverDefaults.folders || []), s.folders);
+    }
+
+    function saveSettings() {
+        localStorage.setItem('pipelineSettings', JSON.stringify(getFormSettings()));
+        showBanner('settingsBanner', 'ok', '✅ सेटिंग्स इस browser में सेव हो गईं।');
+    }
+
+    function loadDefaults() {
+        localStorage.removeItem('pipelineSettings');
+        applyFormSettings(serverDefaults);
+        showBanner('settingsBanner', 'ok', '↺ सर्वर डिफ़ॉल्ट लोड कर दिए गए।');
+    }
+
+    function saveFilters() {
+        const current = JSON.parse(localStorage.getItem('pipelineSettings') || '{}');
+        current.subjectBlacklist = document.getElementById('subjectBlacklist').value;
+        current.senderBlacklist = document.getElementById('senderBlacklist').value;
+        localStorage.setItem('pipelineSettings', JSON.stringify(current));
+        alert('फ़िल्टर सेव हो गए — अगली पाइपलाइन run me use honge।');
+    }
+
+    async function loadSettings() {
+        try {
+            const res = await fetch('/api/defaults');
+            serverDefaults = await res.json();
+        } catch (e) {
+            serverDefaults = { folders: [] };
+        }
+        const stored = localStorage.getItem('pipelineSettings');
+        const s = stored ? JSON.parse(stored) : serverDefaults;
+        applyFormSettings(s);
+
+        document.getElementById('apiKeyHint').textContent = serverDefaults.hasGeminiKey
+            ? '✅ Server env me Gemini key already set hai — khaali chhod sakte hain.'
+            : '⚠️ Server env me koi key set nahi — yahan daalna zaroori hai.';
+    }
+
+    // टैब स्विचिंग
+    document.querySelectorAll('.tab').forEach(tab => {
+        tab.addEventListener('click', () => {
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+            tab.classList.add('active');
+            document.getElementById(tab.dataset.tab).classList.add('active');
+            if (tab.dataset.tab === 'sheet' && !lastSheetData) renderSheetPreview();
+            if (tab.dataset.tab === 'analytics' && !lastSheetData) loadAnalyticsData();
+        });
+    });
+
+    function toggleRobot() {
+        document.getElementById('robotPopup').classList.toggle('active');
+    }
+
+    // ---------- पाइपलाइन (असली backend call) ----------
+    let isRunning = false;
+    let abortController = null;
+
+    function resetCounters() {
+        document.getElementById('processedCount').textContent = '0';
+        document.getElementById('skippedCount').textContent = '0';
+        document.getElementById('errorCount').textContent = '0';
+        document.getElementById('progressBar').style.width = '0%';
+        document.querySelector('#logTable tbody').innerHTML = '';
+    }
+
+    function addLogEntry(subject, from, company, amount, status, date) {
+        const tbody = document.querySelector('#logTable tbody');
+        const row = tbody.insertRow(0);
+        row.innerHTML = `<td>${escapeHtml(subject)}</td><td>${escapeHtml(from)}</td><td>${escapeHtml(company)}</td><td>${escapeHtml(String(amount))}</td><td>${escapeHtml(status)}</td><td>${escapeHtml(date)}</td>`;
+    }
+
+    function escapeHtml(str) {
+        return String(str ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+    }
+
+    async function startPipeline() {
+        if (isRunning) return;
+        isRunning = true;
+        hideBanner('liveBanner');
+        resetCounters();
+        const btn = document.getElementById('startBtn');
+        btn.disabled = true;
+        btn.textContent = '⏳ चल रहा है...';
+        setStatus('busy', 'पाइपलाइन चल रही है...');
+        document.getElementById('progressBar').style.width = '15%';
+
+        abortController = new AbortController();
+        try {
+            const res = await fetch('/api/run', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(getFormSettings()),
+                signal: abortController.signal,
+            });
+            const data = await res.json();
+            document.getElementById('progressBar').style.width = '100%';
+
+            if (!data.ok) {
+                setStatus('error', 'एरर आई');
+                showBanner('liveBanner', 'err', '❌ ' + data.error);
+                return;
+            }
+
+            document.getElementById('processedCount').textContent = data.processed;
+            document.getElementById('skippedCount').textContent = data.skipped;
+            document.getElementById('errorCount').textContent = data.errors;
+            (data.logs || []).forEach(l => addLogEntry(l.subject, l.from, l.company, l.amount, l.status, l.date));
+
+            setStatus('active', 'तैयार');
+            showBanner('liveBanner', 'ok', `✅ पूरा हुआ — Processed: ${data.processed}, Skipped: ${data.skipped}, Errors: ${data.errors}`);
+        } catch (e) {
+            if (e.name === 'AbortError') {
+                showBanner('liveBanner', 'err', '⏹️ रोक दिया गया।');
+            } else {
+                showBanner('liveBanner', 'err', '❌ Network/Server error: ' + e.message);
+            }
+            setStatus('error', 'रुक गया');
+        } finally {
+            isRunning = false;
+            btn.disabled = false;
+            btn.textContent = '▶️ पाइपलाइन चलाएँ';
+        }
+    }
+
+    function stopPipeline() {
+        if (abortController) abortController.abort();
+    }
+
+    // ---------- शीट प्रीव्यू (असली Google Sheet डेटा) ----------
+    async function renderSheetPreview() {
+        hideBanner('sheetBanner');
+        const container = document.getElementById('sheetPreview');
+        container.innerHTML = '<p style="padding:16px;color:#94a3b8;">लोड हो रहा है...</p>';
+        try {
+            const res = await fetch('/api/sheet-data', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(getFormSettings()),
+            });
+            const data = await res.json();
+            if (!data.ok) {
+                container.innerHTML = '';
+                showBanner('sheetBanner', 'err', '❌ ' + data.error);
+                return;
+            }
+            lastSheetData = data;
+            if (!data.headers.length) {
+                container.innerHTML = '<p style="padding:16px;color:#94a3b8;">शीट खाली है।</p>';
+                return;
+            }
+            let html = '<table><thead><tr>' + data.headers.map(h => `<th>${escapeHtml(h)}</th>`).join('') + '</tr></thead><tbody>';
+            data.rows.forEach(row => {
+                html += '<tr>' + row.map(c => `<td>${escapeHtml(c)}</td>`).join('') + '</tr>';
+            });
+            html += '</tbody></table>';
+            container.innerHTML = html;
+        } catch (e) {
+            container.innerHTML = '';
+            showBanner('sheetBanner', 'err', '❌ ' + e.message);
+        }
+    }
+
+    function downloadCSV() {
+        if (!lastSheetData) { alert('पहले शीट प्रीव्यू लोड करें।'); return; }
+        const rows = [lastSheetData.headers, ...lastSheetData.rows];
+        const csv = rows.map(r => r.map(c => `"${String(c ?? '').replace(/"/g, '""')}"`).join(',')).join('\n');
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = 'insurance_recovery_sheet.csv';
+        link.click();
+    }
+
+    function downloadPDF() {
+        if (!lastSheetData) { alert('पहले शीट प्रीव्यू लोड करें।'); return; }
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF({ orientation: 'landscape' });
+        doc.setFontSize(12);
+        doc.text('Insurance Recovery — Sheet Export', 14, 12);
+        let y = 22;
+        doc.setFontSize(8);
+        doc.text(lastSheetData.headers.join(' | '), 14, y);
+        y += 6;
+        lastSheetData.rows.forEach(row => {
+            if (y > 190) { doc.addPage(); y = 16; }
+            doc.text(row.join(' | ').slice(0, 180), 14, y);
+            y += 6;
+        });
+        doc.save('insurance_recovery_sheet.pdf');
+    }
+
+    // ---------- एनालिटिक्स (असली शीट डेटा से aggregate) ----------
+    let comparisonChart;
+
+    async function loadAnalyticsData() {
+        hideBanner('analyticsBanner');
+        if (!lastSheetData) {
+            await renderSheetPreview();
+        }
+        if (!lastSheetData || !lastSheetData.headers.length) {
+            showBanner('analyticsBanner', 'err', 'शीट में डेटा नहीं मिला।');
+            return;
+        }
+        // Sheet layout: A=Unit, B=Company, ... J=Deduction, K=Outstanding (0-indexed: 0,1,...9,10)
+        const agg = {}; // unit -> company -> {outstanding, deduction}
+        const unitSet = new Set();
+        lastSheetData.rows.forEach(row => {
+            const unit = row[0] || 'Unknown';
+            const company = row[1] || 'Unknown';
+            if (!unit || !company) return;
+            const deduction = parseFloat((row[9] || '0').toString().replace(/[^\d.]/g, '')) || 0;
+            const outstanding = parseFloat((row[10] || '0').toString().replace(/[^\d.]/g, '')) || 0;
+            if (!deduction && !outstanding) return;
+            unitSet.add(unit);
+            agg[unit] = agg[unit] || {};
+            agg[unit][company] = agg[unit][company] || { outstanding: 0, deduction: 0 };
+            agg[unit][company].outstanding += outstanding;
+            agg[unit][company].deduction += deduction;
+        });
+
+        window._analyticsAgg = agg;
+        const unitSelect = document.getElementById('unitFilter');
+        const prevUnit = unitSelect.value;
+        unitSelect.innerHTML = '<option value="All">सभी</option>' + [...unitSet].map(u => `<option value="${escapeHtml(u)}">${escapeHtml(u)}</option>`).join('');
+        unitSelect.value = [...unitSet].includes(prevUnit) ? prevUnit : 'All';
+
+        applyFilters();
+    }
+
+    function getFilteredData() {
+        const agg = window._analyticsAgg || {};
+        const unit = document.getElementById('unitFilter').value;
+        const company = document.getElementById('companyFilter').value;
+        const units = unit === 'All' ? Object.keys(agg) : [unit];
+        let result = {};
+        for (const u of units) {
+            if (!agg[u]) continue;
+            for (const c in agg[u]) {
+                if (company === 'All' || c === company) {
+                    if (!result[c]) result[c] = { outstanding: 0, deduction: 0 };
+                    result[c].outstanding += agg[u][c].outstanding;
+                    result[c].deduction += agg[u][c].deduction;
+                }
+            }
+        }
+        return result;
+    }
+
+    function populateCompanyDropdown() {
+        const agg = window._analyticsAgg || {};
+        const unit = document.getElementById('unitFilter').value;
+        const companySelect = document.getElementById('companyFilter');
+        const prev = companySelect.value;
+        const units = unit === 'All' ? Object.keys(agg) : [unit];
+        const companies = new Set();
+        units.forEach(u => { if (agg[u]) Object.keys(agg[u]).forEach(c => companies.add(c)); });
+        companySelect.innerHTML = '<option value="All">सभी</option>' + [...companies].map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
+        companySelect.value = [...companies].includes(prev) ? prev : 'All';
+    }
+
+    function renderComparisonChart(data, type) {
+        const ctx = document.getElementById('comparisonChart').getContext('2d');
+        if (comparisonChart) comparisonChart.destroy();
+        const companies = Object.keys(data);
+        if (!companies.length) return;
+        const outstanding = companies.map(c => data[c].outstanding);
+        const deduction = companies.map(c => data[c].deduction);
+        comparisonChart = new Chart(ctx, {
+            type: type,
+            data: {
+                labels: companies,
+                datasets: [
+                    { label: 'Outstanding', data: outstanding, backgroundColor: type === 'pie' ? ['#1b4a7a', '#2e86c1', '#3498db', '#5dade2', '#85c1e9'] : '#1b4a7a' },
+                    { label: 'Deduction', data: deduction, backgroundColor: type === 'pie' ? ['#e67e22', '#f39c12', '#f1c40f', '#f9e79f', '#fdebd0'] : '#e67e22' },
+                ],
+            },
+            options: { responsive: true },
+        });
+    }
+
+    function applyFilters() {
+        populateCompanyDropdown();
+        const data = getFilteredData();
+        const type = document.getElementById('chartTypeSelector').value;
+        renderComparisonChart(data, type);
+    }
+
+    // ---------- AI टूल्स (Gemini backed) ----------
+    function appendChat(cls, text) {
+        const box = document.getElementById('chatBox');
+        const div = document.createElement('div');
+        div.className = 'msg ' + cls;
+        div.textContent = text;
+        box.appendChild(div);
+        box.scrollTop = box.scrollHeight;
+    }
+
+    async function callAi(prompt) {
+        const res = await fetch('/api/ai-chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ apiKey: document.getElementById('apiKey').value, model: document.getElementById('geminiModel').value, prompt }),
+        });
+        return res.json();
+    }
+
+    async function sendChat() {
+        const input = document.getElementById('chatInput');
+        const text = input.value.trim();
+        if (!text) return;
+        appendChat('me', text);
+        input.value = '';
+        appendChat('bot', '...सोच रहा हूँ');
+        const data = await callAi(text);
+        const box = document.getElementById('chatBox');
+        box.lastChild.remove();
+        appendChat('bot', data.ok ? data.reply : ('❌ ' + data.error));
+    }
+
+    async function generateReply() {
+        const company = document.getElementById('replyCompany').value || 'Insurance Company';
+        const amount = document.getElementById('replyAmount').value || '0';
+        const out = document.getElementById('replyOutput');
+        out.value = 'draft ban raha hai...';
+        const data = await callAi(`Hospital insurance recovery ke liye ek short, professional follow-up email likho — company: "${company}", outstanding amount: ₹${amount}. English me likho, polite lekin firm tone me.`);
+        out.value = data.ok ? data.reply : ('Error: ' + data.error);
+    }
+
+    async function analyzePriority() {
+        const company = document.getElementById('replyCompany').value || 'Insurance Company';
+        const amount = document.getElementById('replyAmount').value || '0';
+        const result = document.getElementById('priorityResult');
+        result.textContent = 'सोच रहा हूँ...';
+        const data = await callAi(`Company: "${company}", pending amount: ₹${amount}. Insurance recovery follow-up ke liye priority batao — High, Medium ya Low — sirf ek word aur ek chhoti si wajah (max 15 words) do.`);
+        result.textContent = data.ok ? ('🧠 ' + data.reply) : ('Error: ' + data.error);
+    }
+
+    document.getElementById('chatInput').addEventListener('keydown', e => { if (e.key === 'Enter') sendChat(); });
+
+    // पेज लोड
+    loadSettings();
+</script>
+</body>
+</html>
