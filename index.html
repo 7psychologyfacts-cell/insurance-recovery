@@ -72,7 +72,7 @@
 
         .robot-btn { position:fixed; bottom:30px; right:30px; width:65px; height:65px; background: #ff6f61; border-radius:50%; box-shadow:0 8px 20px rgba(0,0,0,0.2); cursor:pointer; display:flex; align-items:center; justify-content:center; font-size:2.2rem; z-index:999; transition:0.3s; border: none; }
         .robot-btn:hover { transform:scale(1.1); }
-        .robot-popup { position:fixed; bottom:110px; right:30px; width:380px; height:520px; background:white; border-radius:20px; box-shadow:0 20px 50px rgba(0,0,0,0.2); z-index:1000; display:none; flex-direction:column; overflow:auto; border:2px solid #ff6f61; resize:both; min-width:300px; min-height:340px; max-width:90vw; max-height:85vh; }
+        .robot-popup { position:fixed; bottom:110px; right:30px; width:380px; height:520px; background:white; border-radius:20px; box-shadow:0 20px 50px rgba(0,0,0,0.2); z-index:1000; display:none; flex-direction:column; overflow:hidden; border:2px solid #ff6f61; min-width:300px; min-height:340px; max-width:90vw; max-height:85vh; }
         .robot-popup.active { display:flex; }
         .robot-header { background: #ff6f61; color:white; padding:16px; display:flex; align-items:center; gap:10px; font-weight:600; flex-shrink:0; }
         .robot-body { padding:16px; overflow-y:auto; flex:1; background:#fafafa; display:flex; flex-direction:column; min-height:0; }
@@ -86,8 +86,42 @@
         .chart-row { display:flex; gap:20px; flex-wrap:wrap; }
         .chart-box { flex:1; min-width:300px; background:#f8fafd; border-radius:14px; padding:20px; border:1px solid #e9edf4; margin-bottom:20px; }
         .report-grid { display:grid; grid-template-columns: 340px 1fr; gap:24px; align-items:start; }
+        .report-grid > * { min-width:0; }
         @media (max-width:900px) { .report-grid { grid-template-columns: 1fr; } }
         @media (max-width:600px) { .header h1 { font-size:1.3rem; } .config-grid { grid-template-columns:1fr; } }
+
+        /* ---- Fix: canvas/table blow-out inside grid & flex containers ----
+           Flex/grid items default to min-width:auto, which lets a wide canvas
+           or table force the column wider than the dashboard, and since the
+           dashboard clips overflow, the extra part looked "cut in half".
+           min-width:0 lets the inner scroll containers do their job instead. */
+        .chart-row, .chart-box, .chart-canvas-wrap, .sheet-preview, .heatmap-wrap { min-width:0; }
+        .chart-canvas-wrap canvas { max-width:100%; }
+        .tab-content { overflow-x:auto; }
+
+        /* ---- Multi-select dropdown (Group By / Value columns) ---- */
+        .ms-dropdown { position:relative; }
+        .ms-toggle { width:100%; text-align:left; padding:10px 14px; border:1px solid #dce3eb; border-radius:8px; background:#ffffff; cursor:pointer; font-size:0.9rem; display:flex; justify-content:space-between; align-items:center; gap:8px; }
+        .ms-toggle:hover { border-color:#1b4a7a; }
+        .ms-toggle .ms-caret { transition:0.2s; color:#94a3b8; }
+        .ms-dropdown.open .ms-toggle { border-color:#1b4a7a; box-shadow:0 0 0 3px rgba(27,74,122,0.1); }
+        .ms-dropdown.open .ms-toggle .ms-caret { transform:rotate(180deg); }
+        .ms-toggle-text { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        .ms-panel { display:none; position:absolute; top:calc(100% + 6px); left:0; right:0; background:#ffffff; border:1px solid #dce3eb; border-radius:8px; box-shadow:0 12px 28px rgba(0,0,0,0.14); max-height:220px; overflow-y:auto; z-index:50; padding:8px; }
+        .ms-dropdown.open .ms-panel { display:block; }
+        .ms-panel label.checkbox-item { display:flex; width:100%; margin:0 0 4px 0; box-sizing:border-box; }
+        .ms-panel label.checkbox-item:last-child { margin-bottom:0; }
+
+        /* ---- AI-Robo: custom multi-edge resize handles ---- */
+        .resize-handle { position:absolute; z-index:20; }
+        .resize-handle.dir-n { top:-4px; left:12px; right:12px; height:8px; cursor:ns-resize; }
+        .resize-handle.dir-s { bottom:-4px; left:12px; right:12px; height:8px; cursor:ns-resize; }
+        .resize-handle.dir-e { top:12px; bottom:12px; right:-4px; width:8px; cursor:ew-resize; }
+        .resize-handle.dir-w { top:12px; bottom:12px; left:-4px; width:8px; cursor:ew-resize; }
+        .resize-handle.dir-ne { top:-5px; right:-5px; width:16px; height:16px; cursor:nesw-resize; }
+        .resize-handle.dir-nw { top:-5px; left:-5px; width:16px; height:16px; cursor:nwse-resize; }
+        .resize-handle.dir-se { bottom:-5px; right:-5px; width:16px; height:16px; cursor:nwse-resize; }
+        .resize-handle.dir-sw { bottom:-5px; left:-5px; width:16px; height:16px; cursor:nesw-resize; }
     </style>
 </head>
 <body>
@@ -179,7 +213,7 @@
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; flex-wrap:wrap; gap:10px;">
             <h3>📋 Google Sheet Data Preview</h3>
             <div>
-                <button class="btn btn-outline" onclick="renderSheetPreview()">🔄 Refresh</button>
+                <button class="btn btn-outline" onclick="invalidateDerivedTabs(); renderSheetPreview()">🔄 Refresh</button>
                 <button class="btn btn-outline" onclick="downloadExcel()">📊 Export to Excel</button>
             </div>
         </div>
@@ -242,11 +276,23 @@
                 <h3>🧮 Build Report</h3>
                 <div class="form-group">
                     <label>Group By Column(s) — pick one or more</label>
-                    <div class="checkbox-group" id="reportGroupByBox"></div>
+                    <div class="ms-dropdown" id="reportGroupByDropdown">
+                        <button type="button" class="ms-toggle" onclick="toggleMsDropdown('reportGroupByDropdown')">
+                            <span class="ms-toggle-text" id="reportGroupByToggleText">Select columns</span>
+                            <span class="ms-caret">▾</span>
+                        </button>
+                        <div class="ms-panel checkbox-group" id="reportGroupByBox"></div>
+                    </div>
                 </div>
                 <div class="form-group">
                     <label>Value Column(s) — pick one or more</label>
-                    <div class="checkbox-group" id="reportValueBox"></div>
+                    <div class="ms-dropdown" id="reportValueDropdown">
+                        <button type="button" class="ms-toggle" onclick="toggleMsDropdown('reportValueDropdown')">
+                            <span class="ms-toggle-text" id="reportValueToggleText">Select columns</span>
+                            <span class="ms-caret">▾</span>
+                        </button>
+                        <div class="ms-panel checkbox-group" id="reportValueBox"></div>
+                    </div>
                 </div>
                 <div class="form-group"><label>Aggregation</label>
                     <select id="reportAggregation" onchange="buildCustomReport()">
@@ -290,6 +336,14 @@
 <!-- FLOATING AI-ROBO BUTTON -->
 <button class="robot-btn" id="robotButton" onclick="toggleRobot()">🤖</button>
 <div class="robot-popup" id="robotPopup">
+    <div class="resize-handle dir-n" data-dir="n"></div>
+    <div class="resize-handle dir-s" data-dir="s"></div>
+    <div class="resize-handle dir-e" data-dir="e"></div>
+    <div class="resize-handle dir-w" data-dir="w"></div>
+    <div class="resize-handle dir-ne" data-dir="ne"></div>
+    <div class="resize-handle dir-nw" data-dir="nw"></div>
+    <div class="resize-handle dir-se" data-dir="se"></div>
+    <div class="resize-handle dir-sw" data-dir="sw"></div>
     <div class="robot-header">
         <span>🤖 AI-Robo</span>
         <button class="close-btn" onclick="toggleRobot()">✕</button>
@@ -438,6 +492,16 @@
     }
 
     // Tab switching
+    // NOTE: previously these three checks all used "&& !lastSheetData" as their
+    // guard. That meant if the Sheet Preview tab (or any tab) was opened first
+    // and cached lastSheetData, switching to Analytics/Custom Report afterwards
+    // would skip loadAnalyticsData()/loadReportColumns() entirely — leaving the
+    // dropdowns empty and the chart blank ("data load nahi ho raha"). Each tab
+    // now tracks its own "have I populated my UI yet" flag instead, so it still
+    // reuses the cached lastSheetData (no extra network call) but always builds
+    // its own chart/dropdowns the first time you land on it.
+    let analyticsLoaded = false;
+    let reportLoaded = false;
     document.querySelectorAll('.tab').forEach(tab => {
         tab.addEventListener('click', () => {
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
@@ -445,14 +509,81 @@
             tab.classList.add('active');
             document.getElementById(tab.dataset.tab).classList.add('active');
             if (tab.dataset.tab === 'sheet' && !lastSheetData) renderSheetPreview();
-            if (tab.dataset.tab === 'analytics' && !lastSheetData) loadAnalyticsData();
-            if (tab.dataset.tab === 'report' && !lastSheetData) loadReportColumns();
+            if (tab.dataset.tab === 'analytics' && !analyticsLoaded) loadAnalyticsData();
+            if (tab.dataset.tab === 'report' && !reportLoaded) loadReportColumns();
+            // Charts sometimes compute their size on the frame right after the
+            // tab becomes visible; nudging a resize a tick later keeps them
+            // from ever getting stuck at a stale/clipped size.
+            setTimeout(() => {
+                if (comparisonChart) comparisonChart.resize();
+                if (reportChart) reportChart.resize();
+            }, 50);
         });
+    });
+
+    // A manual "Refresh" on the Sheet Preview tab fetches new data — make sure
+    // Analytics / Custom Report pick it up again next time they're visited.
+    function invalidateDerivedTabs() {
+        analyticsLoaded = false;
+        reportLoaded = false;
+    }
+
+    window.addEventListener('resize', () => {
+        if (comparisonChart) comparisonChart.resize();
+        if (reportChart) reportChart.resize();
     });
 
     function toggleRobot() {
         document.getElementById('robotPopup').classList.toggle('active');
     }
+
+    // ---------- AI-Robo: drag-resize from any edge or corner ----------
+    // The popup is anchored with `bottom` and `right` (not top/left), so
+    // growing width/height alone naturally expands it up-and-to-the-left —
+    // which means every handle (not just the browser's native bottom-right
+    // one) can work with a plain width/height change. No repositioning math
+    // needed, which keeps the motion smooth instead of jumpy.
+    (function initRobotResize() {
+        const popup = document.getElementById('robotPopup');
+        if (!popup) return;
+        const MIN_W = 300, MIN_H = 340;
+
+        popup.querySelectorAll('.resize-handle').forEach(handle => {
+            const dir = handle.dataset.dir;
+
+            const onDown = startEvt => {
+                startEvt.preventDefault();
+                const point = startEvt.touches ? startEvt.touches[0] : startEvt;
+                const startX = point.clientX, startY = point.clientY;
+                const startW = popup.offsetWidth, startH = popup.offsetHeight;
+                const maxW = window.innerWidth * 0.9, maxH = window.innerHeight * 0.85;
+
+                const onMove = moveEvt => {
+                    const p = moveEvt.touches ? moveEvt.touches[0] : moveEvt;
+                    let w = startW, h = startH;
+                    if (dir.includes('e')) w = startW + (p.clientX - startX);
+                    if (dir.includes('w')) w = startW - (p.clientX - startX);
+                    if (dir.includes('s')) h = startH + (p.clientY - startY);
+                    if (dir.includes('n')) h = startH - (p.clientY - startY);
+                    popup.style.width = Math.min(Math.max(w, MIN_W), maxW) + 'px';
+                    popup.style.height = Math.min(Math.max(h, MIN_H), maxH) + 'px';
+                };
+                const onUp = () => {
+                    document.removeEventListener('mousemove', onMove);
+                    document.removeEventListener('mouseup', onUp);
+                    document.removeEventListener('touchmove', onMove);
+                    document.removeEventListener('touchend', onUp);
+                };
+                document.addEventListener('mousemove', onMove);
+                document.addEventListener('mouseup', onUp);
+                document.addEventListener('touchmove', onMove, { passive: false });
+                document.addEventListener('touchend', onUp);
+            };
+
+            handle.addEventListener('mousedown', onDown);
+            handle.addEventListener('touchstart', onDown, { passive: false });
+        });
+    })();
 
     // ---------- Pipeline: list all pending mails, then process one at a time ----------
     let isRunning = false;
@@ -678,6 +809,7 @@
     }
 
     async function loadAnalyticsData() {
+        analyticsLoaded = true;
         hideBanner('analyticsBanner');
         if (!lastSheetData) await renderSheetPreview();
         if (!lastSheetData || !lastSheetData.headers.length) {
@@ -831,6 +963,7 @@
     let currentReportColumns = []; // ordered list of column names in currentReportRows, for table/export
 
     async function loadReportColumns() {
+        reportLoaded = true;
         hideBanner('reportBanner');
         if (!lastSheetData) await renderSheetPreview();
         if (!lastSheetData || !lastSheetData.headers.length) {
@@ -843,13 +976,39 @@
         // Sensible defaults: group by Company (index 1); value = Outstanding (10) if present, else Deduction (9)
         groupBox.innerHTML = lastSheetData.headers.map((h, idx) => {
             const checked = idx === 1 ? 'checked' : '';
-            return `<label class="checkbox-item"><input type="checkbox" class="report-group-cb" value="${idx}" ${checked} onchange="buildCustomReport()"> ${escapeHtml(h)}</label>`;
+            return `<label class="checkbox-item"><input type="checkbox" class="report-group-cb" value="${idx}" ${checked} onchange="onReportCheckboxChange()"> ${escapeHtml(h)}</label>`;
         }).join('');
         valueBox.innerHTML = lastSheetData.headers.map((h, idx) => {
             const checked = (idx === 10 || idx === 9) ? 'checked' : '';
-            return `<label class="checkbox-item"><input type="checkbox" class="report-value-cb" value="${idx}" ${checked} onchange="buildCustomReport()"> ${escapeHtml(h)}</label>`;
+            return `<label class="checkbox-item"><input type="checkbox" class="report-value-cb" value="${idx}" ${checked} onchange="onReportCheckboxChange()"> ${escapeHtml(h)}</label>`;
         }).join('');
 
+        refreshMsToggleLabel('reportGroupByDropdown', 'reportGroupByToggleText', '.report-group-cb', 'Select columns');
+        refreshMsToggleLabel('reportValueDropdown', 'reportValueToggleText', '.report-value-cb', 'Select columns');
+        buildCustomReport();
+    }
+
+    // ---------- Group By / Value dropdown (checkbox list inside a popover) ----------
+    function toggleMsDropdown(id) {
+        document.querySelectorAll('.ms-dropdown.open').forEach(d => { if (d.id !== id) d.classList.remove('open'); });
+        document.getElementById(id).classList.toggle('open');
+    }
+    document.addEventListener('click', e => {
+        document.querySelectorAll('.ms-dropdown.open').forEach(d => {
+            if (!d.contains(e.target)) d.classList.remove('open');
+        });
+    });
+    function refreshMsToggleLabel(dropdownId, textId, cbSelector, placeholder) {
+        const dropdown = document.getElementById(dropdownId);
+        const checked = Array.from(dropdown.querySelectorAll(cbSelector + ':checked'));
+        const el = document.getElementById(textId);
+        if (!checked.length) { el.textContent = placeholder; return; }
+        const names = checked.map(cb => cb.parentElement.textContent.trim());
+        el.textContent = `${checked.length} selected: ${names.join(', ')}`;
+    }
+    function onReportCheckboxChange() {
+        refreshMsToggleLabel('reportGroupByDropdown', 'reportGroupByToggleText', '.report-group-cb', 'Select columns');
+        refreshMsToggleLabel('reportValueDropdown', 'reportValueToggleText', '.report-value-cb', 'Select columns');
         buildCustomReport();
     }
 
