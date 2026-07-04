@@ -926,14 +926,16 @@ def write_mail_data_to_sheet(ws, row_idx, from_addr, to_addr, cc_addr, subject, 
 
 
 # #############################################################################
-# SECTION 5 — IMAP HELPERS — same as Colab
+# SECTION 5 — IMAP HELPERS (UID-based — stable across separate connections,
+# because each mail is now fetched in its OWN short request instead of one
+# giant loop, so plain sequence numbers from a single session can't be used).
 # #############################################################################
 
-def save_email_to_disk(imap, msg_id, save_dir=TMP_DIR):
+def save_email_to_disk_by_uid(imap, uid: str, save_dir=TMP_DIR):
     os.makedirs(save_dir, exist_ok=True)
-    status, msg_data = imap.fetch(msg_id, "(RFC822)")
+    status, msg_data = imap.uid("fetch", uid, "(RFC822)")
     if status != "OK" or not msg_data:
-        raise RuntimeError(f"IMAP fetch fail ho gaya mail {msg_id!r} ke liye (status={status})")
+        raise RuntimeError(f"IMAP fetch fail ho gaya mail UID {uid!r} ke liye (status={status})")
 
     raw_bytes = None
     for part in msg_data:
@@ -946,9 +948,9 @@ def save_email_to_disk(imap, msg_id, save_dir=TMP_DIR):
                 raw_bytes = part
                 break
     if raw_bytes is None:
-        raise RuntimeError(f"Mail {msg_id!r} ke liye raw email bytes nahi mile.")
+        raise RuntimeError(f"Mail UID {uid!r} ke liye raw email bytes nahi mile.")
 
-    file_path = os.path.join(save_dir, f"mail_{msg_id.decode()}.eml")
+    file_path = os.path.join(save_dir, f"mail_{uid}.eml")
     with open(file_path, "wb") as f:
         f.write(bytes(raw_bytes))
     return file_path
@@ -959,14 +961,6 @@ def get_to_cc(file_path):
         raw = f.read()
     msg = message_from_bytes(raw, policy=email.policy.default)
     return msg.get("To", "").strip(), msg.get("Cc", "").strip()
-
-
-def get_message_id(file_path):
-    with open(file_path, "rb") as f:
-        raw = f.read()
-    msg = message_from_bytes(raw, policy=email.policy.default)
-    mid = msg.get("Message-ID", "") or msg.get("Message-Id", "")
-    return mid.strip() if mid else file_path
 
 
 def imap_login(cfg):
@@ -992,30 +986,48 @@ def select_folder(imap, folder_name: str) -> bool:
     return False
 
 
-def fetch_email_ids_in_folder(imap, from_date, to_date):
+def fetch_uids_in_folder(imap, from_date, to_date):
     criteria = f'(SINCE "{from_date}" BEFORE "{to_date}")'
-    status, data = imap.search(None, criteria)
+    status, data = imap.uid("search", None, criteria)
     if status == "OK" and data and data[0]:
-        return data[0].split()
+        return [u.decode() for u in data[0].split()]
     return []
 
 
 # #############################################################################
-# SECTION 6 — MASTER PIPELINE (request-scoped, returns logs/stats to UI)
+# SECTION 6 — PIPELINE: "list" (fast) + "process one" (short, per-mail)
+# This split means the UI can update after EVERY mail instead of waiting for
+# the whole batch, and no single request runs long enough to hit a serverless
+# timeout. The actual extraction/matching logic below is IDENTICAL to the
+# original Colab script — only the orchestration (loop vs per-item call) changed.
 # #############################################################################
 
-def run_full_pipeline(cfg: dict) -> dict:
-    logs = []
-    processed, skipped, errors = 0, 0, 0
-    since_last_cooldown = 0
-    processed_ids_this_run = set()
+def _log_entry(subject, from_addr, company, amount, status, date_str):
+    return {"subject": subject, "from": from_addr, "company": company,
+            "amount": amount, "status": status, "date": date_str}
 
-    def log(subject, from_addr, company, amount, status, date_str):
-        logs.append({
-            "subject": subject, "from": from_addr, "company": company,
-            "amount": amount, "status": status, "date": date_str,
-        })
 
+def list_pending_emails(cfg: dict) -> list:
+    """Har selected folder me date-range ke andar aane wali mails ki list (folder+UID) laata hai."""
+    imap = imap_login(cfg)
+    items = []
+    try:
+        for folder in cfg["folders"]:
+            if not select_folder(imap, folder):
+                continue
+            uids = fetch_uids_in_folder(imap, cfg["fromDate"], cfg["toDate"])
+            for uid in uids:
+                items.append({"folder": folder, "uid": uid})
+    finally:
+        try:
+            imap.logout()
+        except Exception:
+            pass
+    return items
+
+
+def process_one_email(cfg: dict, folder: str, uid: str) -> dict:
+    """Ek single mail ko poori tarah process karke Sheet me likhta hai — same logic as Colab script."""
     gemini_client = get_gemini_client(cfg["geminiApiKey"])
     gemini_model = cfg["geminiModel"]
 
@@ -1023,114 +1035,97 @@ def run_full_pipeline(cfg: dict) -> dict:
     ensure_headers(ws)
 
     imap = imap_login(cfg)
-
-    for folder in cfg["folders"]:
+    meta = None
+    try:
         if not select_folder(imap, folder):
-            continue
+            return {"status": "error", "log": _log_entry("-", "-", "-", "-", f"Folder select failed: {folder}", "-")}
 
-        msg_ids = fetch_email_ids_in_folder(imap, cfg["fromDate"], cfg["toDate"])
+        file_path = save_email_to_disk_by_uid(imap, uid)
+        meta = read_eml(file_path)
+        to_field, cc_field = get_to_cc(file_path)
 
-        for mid in msg_ids:
-            try:
-                file_path = save_email_to_disk(imap, mid)
-            except Exception as e:
-                errors += 1
-                continue
+        if not should_process_mail(meta["from"], to_field):
+            return {"status": "skipped", "log": _log_entry(meta["subject"], meta["from"], "-", "-", "Skipped (internal mail)", meta["date_str"])}
 
-            message_id = get_message_id(file_path)
-            if message_id in processed_ids_this_run:
-                continue
+        if is_blacklisted(meta["subject"], meta["from"], cfg):
+            return {"status": "skipped", "log": _log_entry(meta["subject"], meta["from"], "-", "-", "Blacklisted", meta["date_str"])}
 
-            try:
-                meta = read_eml(file_path)
-                to_field, cc_field = get_to_cc(file_path)
+        subject = meta["subject"]
+        intent = classify_subject_intent(
+            subject, get_latest_message(meta.get("plain_text", ""))[:500], gemini_client, gemini_model
+        )
+        if intent == "Other":
+            return {"status": "skipped", "log": _log_entry(subject, meta["from"], "-", "-", "Skipped (Other)", meta["date_str"])}
 
-                if not should_process_mail(meta["from"], to_field):
-                    skipped += 1
-                    continue
+        claims_df = extract_claims(meta, gemini_client, gemini_model, use_latest_only=True)
+        focus_amount = pick_focus_amount(claims_df, intent)
 
-                if is_blacklisted(meta["subject"], meta["from"], cfg):
-                    skipped += 1
-                    log(meta["subject"], meta["from"], "-", "-", "Blacklisted", meta["date_str"])
-                    continue
+        if intent == "Outstanding" and (focus_amount == 0 or focus_amount == 0.0):
+            if claims_df is not None and not claims_df.empty:
+                approved_total = claims_df["Approved"].apply(to_float).sum()
+                if approved_total > 0:
+                    focus_amount = approved_total
 
-                subject = meta["subject"]
-                intent = classify_subject_intent(
-                    subject, get_latest_message(meta.get("plain_text", ""))[:500], gemini_client, gemini_model
-                )
-                if intent == "Other":
-                    skipped += 1
-                    log(subject, meta["from"], "-", "-", "Skipped (Other)", meta["date_str"])
-                    continue
+        if not focus_amount:
+            latest_plain = get_latest_message(meta.get("plain_text", ""))
+            fb_amt = _extract_amount_from_plain_body(latest_plain, intent)
+            if fb_amt > 0:
+                focus_amount = fb_amt
 
-                claims_df = extract_claims(meta, gemini_client, gemini_model, use_latest_only=True)
-                focus_amount = pick_focus_amount(claims_df, intent)
+        if not focus_amount and claims_df is not None and not claims_df.empty:
+            other_intent = "Deduction" if intent == "Outstanding" else "Outstanding"
+            other_amount = pick_focus_amount(claims_df, other_intent)
+            if other_amount > 0:
+                focus_amount = other_amount
+                intent = other_intent
 
-                if intent == "Outstanding" and (focus_amount == 0 or focus_amount == 0.0):
-                    if claims_df is not None and not claims_df.empty:
-                        approved_total = claims_df["Approved"].apply(to_float).sum()
-                        if approved_total > 0:
-                            focus_amount = approved_total
+        if not focus_amount:
+            focus_amount = "Follow Up Reminder"
 
-                if not focus_amount:
-                    latest_plain = get_latest_message(meta.get("plain_text", ""))
-                    fb_amt = _extract_amount_from_plain_body(latest_plain, intent)
-                    if fb_amt > 0:
-                        focus_amount = fb_amt
+        unit = get_unit_from_email(meta["from"])
+        to_email = extract_first_email(to_field)
+        company = get_company_from_email(to_email)
 
-                if not focus_amount and claims_df is not None and not claims_df.empty:
-                    other_intent = "Deduction" if intent == "Outstanding" else "Outstanding"
-                    other_amount = pick_focus_amount(claims_df, other_intent)
-                    if other_amount > 0:
-                        focus_amount = other_amount
-                        intent = other_intent
+        row_idx = find_available_row(ws, unit, company)
+        if row_idx is None:
+            row_idx = append_unit_company_row(ws, unit, company)
 
-                if not focus_amount:
-                    focus_amount = "Follow Up Reminder"
+        date_str = meta["date"].strftime("%d/%m/%Y") if meta["date"] else meta["date_str"]
 
-                unit = get_unit_from_email(meta["from"])
-                to_email = extract_first_email(to_field)
-                company = get_company_from_email(to_email)
+        deduction_val = focus_amount if intent == "Deduction" else ""
+        outstanding_val = focus_amount if intent != "Deduction" else ""
 
-                row_idx = find_available_row(ws, unit, company)
-                if row_idx is None:
-                    row_idx = append_unit_company_row(ws, unit, company)
+        raw_data = meta.get("plain_text", "") or _html_to_text(meta.get("html_raw", ""))
 
-                date_str = meta["date"].strftime("%d/%m/%Y") if meta["date"] else meta["date_str"]
+        write_mail_data_to_sheet(
+            ws, row_idx, from_addr=meta["from"], to_addr=to_field, cc_addr=cc_field,
+            subject=subject, date_str=date_str, raw_data=raw_data,
+            deduction_val=deduction_val, outstanding_val=outstanding_val,
+        )
 
-                deduction_val = focus_amount if intent == "Deduction" else ""
-                outstanding_val = focus_amount if intent != "Deduction" else ""
+        return {"status": "processed", "log": _log_entry(subject, meta["from"], company, focus_amount, f"{intent} -> {unit}", date_str)}
 
-                raw_data = meta.get("plain_text", "") or _html_to_text(meta.get("html_raw", ""))
-
-                write_mail_data_to_sheet(
-                    ws, row_idx, from_addr=meta["from"], to_addr=to_field, cc_addr=cc_field,
-                    subject=subject, date_str=date_str, raw_data=raw_data,
-                    deduction_val=deduction_val, outstanding_val=outstanding_val,
-                )
-
-                log(subject, meta["from"], company, focus_amount, f"{intent} → {unit}", date_str)
-                processed += 1
-                since_last_cooldown += 1
-                processed_ids_this_run.add(message_id)
-
-            except Exception as e:
-                errors += 1
-                log(meta.get("subject", "?") if "meta" in dir() else "?", "-", "-", "-", f"Error: {e}", "-")
-                continue
-
-            if since_last_cooldown >= BATCH_SIZE:
-                time.sleep(BATCH_COOLDOWN_SECONDS)
-                since_last_cooldown = 0
-
-    imap.logout()
-
-    return {"processed": processed, "skipped": skipped, "errors": errors, "logs": logs}
+    except Exception as e:
+        subj = meta["subject"] if meta else "-"
+        frm = meta["from"] if meta else "-"
+        return {"status": "error", "log": _log_entry(subj, frm, "-", "-", f"Error: {e}", "-")}
+    finally:
+        try:
+            imap.logout()
+        except Exception:
+            pass
 
 
 # #############################################################################
 # SECTION 7 — FLASK ROUTES
 # #############################################################################
+
+@app.errorhandler(Exception)
+def handle_any_exception(e):
+    """Koi bhi unexpected crash ho to bhi hamesha JSON return karo — kabhi HTML
+    error page nahi, taaki frontend ka JSON.parse kabhi na tootey."""
+    return jsonify({"ok": False, "error": str(e)}), 500
+
 
 @app.route("/")
 def index():
@@ -1144,7 +1139,7 @@ def health():
 
 @app.route("/api/defaults")
 def api_defaults():
-    """Frontend ko non-secret defaults bhejta hai (password/key kabhi wapas nahi bhejenge)."""
+    """Sends non-secret defaults to the frontend (password/key are never sent back)."""
     safe = dict(DEFAULTS)
     safe.pop("imapPass", None)
     safe.pop("geminiApiKey", None)
@@ -1153,15 +1148,30 @@ def api_defaults():
     return jsonify(safe)
 
 
-@app.route("/api/run", methods=["POST"])
-def api_run():
+@app.route("/api/list-emails", methods=["POST"])
+def api_list_emails():
     body = request.get_json(force=True, silent=True) or {}
     cfg = cfg_from_request(body)
     try:
-        result = run_full_pipeline(cfg)
+        items = list_pending_emails(cfg)
+        return jsonify({"ok": True, "items": items, "total": len(items)})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 200
+
+
+@app.route("/api/process-email", methods=["POST"])
+def api_process_email():
+    body = request.get_json(force=True, silent=True) or {}
+    cfg = cfg_from_request(body)
+    folder = body.get("folder", "")
+    uid = body.get("uid", "")
+    if not folder or not uid:
+        return jsonify({"ok": False, "error": "folder/uid missing"}), 200
+    try:
+        result = process_one_email(cfg, folder, uid)
         return jsonify({"ok": True, **result})
     except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
+        return jsonify({"ok": False, "error": str(e)}), 200
 
 
 @app.route("/api/sheet-data", methods=["POST"])
@@ -1177,23 +1187,52 @@ def api_sheet_data():
         rows = values[1:]
         return jsonify({"ok": True, "headers": headers, "rows": rows})
     except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
+        return jsonify({"ok": False, "error": str(e)}), 200
 
 
 @app.route("/api/ai-chat", methods=["POST"])
 def api_ai_chat():
+    """AI-Robo — answers ONLY from the current Google Sheet data, no outside knowledge."""
     body = request.get_json(force=True, silent=True) or {}
-    api_key = body.get("apiKey") or DEFAULTS["geminiApiKey"]
-    model = body.get("model") or DEFAULTS["geminiModel"]
-    prompt = body.get("prompt", "")
-    if not prompt:
-        return jsonify({"ok": False, "error": "prompt khaali hai"}), 400
+    cfg = cfg_from_request(body)
+    question = (body.get("prompt") or "").strip()
+    if not question:
+        return jsonify({"ok": False, "error": "Question is empty"}), 200
+
     try:
-        client = get_gemini_client(api_key)
-        resp = safe_generate_content(client, model, prompt, config=get_generation_config())
+        ws = connect_google_sheet(cfg["sheetUrl"], cfg["worksheetName"])
+        values = ws.get_all_values()
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"Could not read the sheet: {e}"}), 200
+
+    if not values:
+        context_text = "(The sheet is currently empty.)"
+    else:
+        headers, rows = values[0], values[1:]
+        MAX_ROWS, MAX_CHARS = 400, 30000
+        lines = [" | ".join(headers)] + [" | ".join(r) for r in rows[:MAX_ROWS]]
+        context_text = "\n".join(lines)
+        if len(context_text) > MAX_CHARS:
+            context_text = context_text[:MAX_CHARS] + "\n...(truncated)"
+
+    system_prompt = f"""You are "AI-Robo", a data assistant for a hospital insurance-recovery spreadsheet.
+Answer ONLY using the spreadsheet data given below — never use outside/general knowledge.
+If the answer is not present in this data, clearly say the information is not available in the current sheet.
+Never invent numbers or facts that are not in the data below.
+
+SPREADSHEET DATA (pipe-separated, first line = headers):
+{context_text}
+
+USER QUESTION: {question}
+
+Answer concisely, referencing specific figures/rows from the data where relevant.
+"""
+    try:
+        client = get_gemini_client(cfg["geminiApiKey"])
+        resp = safe_generate_content(client, cfg["geminiModel"], system_prompt, config=get_generation_config())
         return jsonify({"ok": True, "reply": (resp.text or "").strip()})
     except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
+        return jsonify({"ok": False, "error": str(e)}), 200
 
 
 if __name__ == "__main__":
