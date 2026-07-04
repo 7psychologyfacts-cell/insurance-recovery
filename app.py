@@ -1026,8 +1026,10 @@ def list_pending_emails(cfg: dict) -> list:
     return items
 
 
-def process_one_email(cfg: dict, folder: str, uid: str) -> dict:
-    """Ek single mail ko poori tarah process karke Sheet me likhta hai — same logic as Colab script."""
+def _process_one_email_core(cfg: dict, folder: str, uid: str) -> dict:
+    """Ek single mail ko poori tarah process karke Sheet me likhta hai — same logic as Colab script.
+    (UNCHANGED — this is the exact same function body as before, just renamed so a
+    logging wrapper can sit around it without touching any of this logic.)"""
     gemini_client = get_gemini_client(cfg["geminiApiKey"])
     gemini_model = cfg["geminiModel"]
 
@@ -1114,6 +1116,56 @@ def process_one_email(cfg: dict, folder: str, uid: str) -> dict:
             imap.logout()
         except Exception:
             pass
+
+
+LOG_SHEET_NAME = "Sheet2"
+LOG_HEADER_ROW = ["Timestamp", "Subject", "From", "Company", "Amount", "Status", "Date"]
+
+
+def _get_or_create_log_sheet(sheet_url: str):
+    """Sheet2 ko kholta hai, na ho to naya bana deta hai — sirf logging ke liye, Sheet1 wale logic se alag."""
+    gc = get_gspread_client()
+    sheet_id = sheet_url.split("/d/")[1].split("/")[0]
+    sh = gc.open_by_key(sheet_id)
+    try:
+        ws2 = sh.worksheet(LOG_SHEET_NAME)
+    except Exception:
+        ws2 = sh.add_worksheet(title=LOG_SHEET_NAME, rows=2000, cols=10)
+        ws2.update(values=[LOG_HEADER_ROW], range_name="A1", value_input_option="USER_ENTERED")
+    return ws2
+
+
+def _append_log_to_sheet2(sheet_url: str, log_entry: dict):
+    """Har processed/skipped/error attempt ka ek audit row Sheet2 me daal deta hai.
+    Yeh Sheet1 me likhne wale asli data-processing se bilkul alag/independent hai —
+    agar yeh fail bhi ho jaye, to main pipeline par koi asar nahi padta."""
+    try:
+        ws2 = _get_or_create_log_sheet(sheet_url)
+        from datetime import datetime, timezone
+        timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+        row = [
+            timestamp,
+            log_entry.get("subject", ""),
+            log_entry.get("from", ""),
+            log_entry.get("company", ""),
+            str(log_entry.get("amount", "")),
+            log_entry.get("status", ""),
+            log_entry.get("date", ""),
+        ]
+        ws2.append_row(row, value_input_option="USER_ENTERED")
+    except Exception as e:
+        print(f"Sheet2 log write failed (non-fatal): {e}")
+
+
+def process_one_email(cfg: dict, folder: str, uid: str) -> dict:
+    """Wrapper: asli processing (_process_one_email_core, bilkul unchanged) chalata hai,
+    fir uska result Sheet2 me bhi audit-log kar deta hai."""
+    result = _process_one_email_core(cfg, folder, uid)
+    try:
+        _append_log_to_sheet2(cfg.get("sheetUrl", ""), result.get("log", {}))
+    except Exception as e:
+        print(f"Sheet2 logging skipped (non-fatal): {e}")
+    return result
 
 
 # #############################################################################
