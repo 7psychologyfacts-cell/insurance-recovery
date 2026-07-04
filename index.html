@@ -6,6 +6,7 @@
     <title>Insurance Recovery Dashboard</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
     <style>
         * { margin:0; padding:0; box-sizing:border-box; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
         body { background: #f0f4f8; display:flex; justify-content:center; align-items:flex-start; min-height:100vh; padding:20px; }
@@ -63,14 +64,19 @@
         .msg-banner.err { background:#fdecea; color:#b3261e; border:1px solid #f5c2c0; }
         .msg-banner.ok { background:#eafaf0; color:#1e7e34; border:1px solid #bfe8cd; }
         .chart-canvas-wrap { position:relative; height:340px; width:100%; }
+        .heatmap-wrap { max-height:420px; overflow:auto; border:1px solid #e9edf4; border-radius:10px; }
+        .heatmap-table { border-collapse:collapse; width:100%; font-size:0.78rem; }
+        .heatmap-table th, .heatmap-table td { padding:8px 10px; text-align:center; border:1px solid #ffffff; white-space:nowrap; }
+        .heatmap-table thead th { background:#1b4a7a; color:white; position:sticky; top:0; z-index:2; }
+        .heatmap-table tbody th { background:#f1f5f9; color:#1e293b; text-align:left; position:sticky; left:0; z-index:1; }
 
         .robot-btn { position:fixed; bottom:30px; right:30px; width:65px; height:65px; background: #ff6f61; border-radius:50%; box-shadow:0 8px 20px rgba(0,0,0,0.2); cursor:pointer; display:flex; align-items:center; justify-content:center; font-size:2.2rem; z-index:999; transition:0.3s; border: none; }
         .robot-btn:hover { transform:scale(1.1); }
-        .robot-popup { position:fixed; bottom:110px; right:30px; width:380px; max-height:550px; background:white; border-radius:20px; box-shadow:0 20px 50px rgba(0,0,0,0.2); z-index:1000; display:none; flex-direction:column; overflow:hidden; border:2px solid #ff6f61; }
+        .robot-popup { position:fixed; bottom:110px; right:30px; width:380px; height:520px; background:white; border-radius:20px; box-shadow:0 20px 50px rgba(0,0,0,0.2); z-index:1000; display:none; flex-direction:column; overflow:auto; border:2px solid #ff6f61; resize:both; min-width:300px; min-height:340px; max-width:90vw; max-height:85vh; }
         .robot-popup.active { display:flex; }
-        .robot-header { background: #ff6f61; color:white; padding:16px; display:flex; align-items:center; gap:10px; font-weight:600; }
-        .robot-body { padding:16px; overflow-y:auto; max-height:460px; background:#fafafa; }
-        .robot-body .ai-chat-box { height:340px; overflow-y:auto; background:white; border-radius:10px; padding:10px; margin-bottom:10px; font-size:0.85rem; }
+        .robot-header { background: #ff6f61; color:white; padding:16px; display:flex; align-items:center; gap:10px; font-weight:600; flex-shrink:0; }
+        .robot-body { padding:16px; overflow-y:auto; flex:1; background:#fafafa; display:flex; flex-direction:column; min-height:0; }
+        .robot-body .ai-chat-box { flex:1; min-height:120px; overflow-y:auto; background:white; border-radius:10px; padding:10px; margin-bottom:10px; font-size:0.85rem; }
         .robot-body .ai-chat-box .msg { margin-bottom:8px; }
         .robot-body .ai-chat-box .msg.me { color:#1b4a7a; font-weight:600; }
         .robot-body .ai-chat-box .msg.bot { color:#2c3e50; }
@@ -157,8 +163,11 @@
             <button class="btn btn-primary" id="startBtn" onclick="startPipeline()">▶️ Run Pipeline</button>
             <button class="btn btn-outline" onclick="stopPipeline()">⏹️ Stop</button>
         </div>
-        <p style="font-size:0.8rem;color:#94a3b8;margin-bottom:10px;">Each email is fetched and processed one at a time, so this table updates live as every mail finishes — please don't close the tab while it's running.</p>
-        <h3>📋 Email Log</h3>
+        <p style="font-size:0.8rem;color:#94a3b8;margin-bottom:10px;">Each email is fetched and processed one at a time, so this table updates live as every mail finishes — please don't close the tab while it's running. Every attempt is also logged to "Sheet2" in your Google Sheet automatically.</p>
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+            <h3>📋 Email Log</h3>
+            <button class="btn btn-outline" onclick="exportLiveLogToExcel()" style="margin:0;">📊 Export to Excel</button>
+        </div>
         <div class="log-table-wrapper">
             <table class="log-table" id="logTable"><thead><tr><th>Subject</th><th>From</th><th>Company</th><th>Amount</th><th>Status</th><th>Date</th></tr></thead><tbody></tbody></table>
         </div>
@@ -203,12 +212,14 @@
             <div class="form-group" style="margin:0;">
                 <label>Chart Type</label>
                 <select id="chartTypeSelector" onchange="applyFilters()">
-                    <option value="bar" selected>Bar</option>
+                    <option value="bar" selected>Bar (comparison)</option>
                     <option value="line">Line</option>
                     <option value="pie">Pie</option>
                     <option value="doughnut">Doughnut</option>
                     <option value="radar">Radar</option>
                     <option value="polarArea">Polar Area</option>
+                    <option value="histogram">Histogram (distribution)</option>
+                    <option value="heatmap">Heatmap (Unit × Company)</option>
                 </select>
             </div>
             <button class="btn btn-outline" onclick="loadAnalyticsData()" style="margin:0;">🔄 Load Data</button>
@@ -217,7 +228,8 @@
             <div class="chart-box">
                 <h3>📊 Company-wise Outstanding / Deduction</h3>
                 <small id="analyticsChartNote" style="display:block;margin-bottom:8px;color:#94a3b8;"></small>
-                <div class="chart-canvas-wrap"><canvas id="comparisonChart"></canvas></div>
+                <div class="chart-canvas-wrap" id="comparisonChartWrap"><canvas id="comparisonChart"></canvas></div>
+                <div class="heatmap-wrap" id="comparisonHeatmap" style="display:none;"></div>
             </div>
         </div>
     </div>
@@ -228,13 +240,21 @@
         <div class="report-grid">
             <div class="card">
                 <h3>🧮 Build Report</h3>
-                <div class="form-group"><label>Group By Column</label><select id="reportGroupBy" onchange="buildCustomReport()"></select></div>
-                <div class="form-group"><label>Value Column</label><select id="reportValueColumn" onchange="buildCustomReport()"></select></div>
+                <div class="form-group">
+                    <label>Group By Column(s) — pick one or more</label>
+                    <div class="checkbox-group" id="reportGroupByBox"></div>
+                </div>
+                <div class="form-group">
+                    <label>Value Column(s) — pick one or more</label>
+                    <div class="checkbox-group" id="reportValueBox"></div>
+                </div>
                 <div class="form-group"><label>Aggregation</label>
                     <select id="reportAggregation" onchange="buildCustomReport()">
                         <option value="sum" selected>Sum</option>
                         <option value="count">Count</option>
                         <option value="average">Average</option>
+                        <option value="max">Max</option>
+                        <option value="min">Min</option>
                     </select>
                 </div>
                 <div class="form-group"><label>Chart Type</label>
@@ -245,15 +265,18 @@
                         <option value="doughnut">Doughnut</option>
                         <option value="radar">Radar</option>
                         <option value="polarArea">Polar Area</option>
+                        <option value="histogram">Histogram (distribution)</option>
+                        <option value="heatmap">Heatmap (needs 2+ Group By columns)</option>
                     </select>
                 </div>
                 <button class="btn btn-outline" onclick="loadReportColumns()">🔄 Load Sheet Columns</button>
-                <button class="btn btn-primary" onclick="exportReportToExcel()">📊 Export to Excel</button>
+                <button class="btn btn-primary" onclick="exportReportToExcel()">📊 Export to Excel (with chart)</button>
             </div>
             <div>
                 <div class="chart-box">
                     <h3>Live Preview</h3>
-                    <div class="chart-canvas-wrap"><canvas id="reportChart"></canvas></div>
+                    <div class="chart-canvas-wrap" id="reportChartWrap"><canvas id="reportChart"></canvas></div>
+                    <div class="heatmap-wrap" id="reportHeatmap" style="display:none;"></div>
                 </div>
                 <div class="chart-box">
                     <h3>Report Table</h3>
@@ -435,6 +458,8 @@
     let isRunning = false;
     let stopRequested = false;
 
+    let liveLogRows = [];
+
     function resetCounters() {
         document.getElementById('processedCount').textContent = '0';
         document.getElementById('skippedCount').textContent = '0';
@@ -442,12 +467,22 @@
         document.getElementById('remainingCount').textContent = '0';
         document.getElementById('progressBar').style.width = '0%';
         document.querySelector('#logTable tbody').innerHTML = '';
+        liveLogRows = [];
     }
 
     function addLogEntry(subject, from, company, amount, status, date) {
         const tbody = document.querySelector('#logTable tbody');
         const row = tbody.insertRow(0);
         row.innerHTML = `<td>${escapeHtml(subject)}</td><td>${escapeHtml(from)}</td><td>${escapeHtml(company)}</td><td>${escapeHtml(String(amount))}</td><td>${escapeHtml(status)}</td><td>${escapeHtml(date)}</td>`;
+        liveLogRows.unshift({ Subject: subject, From: from, Company: company, Amount: amount, Status: status, Date: date });
+    }
+
+    function exportLiveLogToExcel() {
+        if (!liveLogRows.length) { alert('No log entries yet — run the pipeline first.'); return; }
+        const ws = XLSX.utils.json_to_sheet(liveLogRows);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, 'Email Log');
+        XLSX.writeFile(wb, 'live_monitor_log.xlsx');
     }
 
     async function startPipeline() {
@@ -582,6 +617,66 @@
     // ---------- Analytics ----------
     let comparisonChart;
 
+    const SINGLE_SERIES_TYPES = ['pie', 'doughnut', 'polarArea'];
+    const PALETTE = ['#1b4a7a', '#2e86c1', '#3498db', '#5dade2', '#85c1e9', '#e67e22', '#f39c12', '#f1c40f', '#27ae60', '#8e44ad'];
+
+    // Simple equal-width binning for a "distribution" style chart.
+    function computeHistogramBins(values, binCount = 8) {
+        const nums = values.filter(v => typeof v === 'number' && !isNaN(v));
+        if (!nums.length) return { labels: [], data: [] };
+        const min = Math.min(...nums), max = Math.max(...nums);
+        if (min === max) return { labels: [String(Math.round(min))], data: [nums.length] };
+        const binSize = (max - min) / binCount;
+        const bins = new Array(binCount).fill(0);
+        nums.forEach(v => {
+            let idx = Math.floor((v - min) / binSize);
+            if (idx >= binCount) idx = binCount - 1;
+            if (idx < 0) idx = 0;
+            bins[idx]++;
+        });
+        const labels = [];
+        for (let i = 0; i < binCount; i++) {
+            const lo = Math.round(min + i * binSize);
+            const hi = Math.round(min + (i + 1) * binSize);
+            labels.push(`${lo}-${hi}`);
+        }
+        return { labels, data: bins };
+    }
+
+    // Maps a value into a light->dark blue shade based on its position between min and max.
+    function valueToHeatColor(value, min, max) {
+        if (max === min) return 'hsl(210, 70%, 60%)';
+        const t = (value - min) / (max - min);
+        const lightness = 92 - t * 57; // 92% (near white) -> 35% (deep blue)
+        return `hsl(210, 70%, ${lightness}%)`;
+    }
+
+    // Renders a generic row×column value matrix as a colored HTML heatmap table.
+    function renderHeatmapTable(containerId, cornerLabel, rowKeys, colKeys, getValue, formatValue) {
+        const container = document.getElementById(containerId);
+        if (!rowKeys.length || !colKeys.length) {
+            container.innerHTML = '<p style="padding:16px;color:#94a3b8;">No data to display.</p>';
+            return;
+        }
+        let allValues = [];
+        rowKeys.forEach(r => colKeys.forEach(c => allValues.push(getValue(r, c))));
+        const min = Math.min(...allValues), max = Math.max(...allValues);
+
+        let html = `<table class="heatmap-table"><thead><tr><th>${escapeHtml(cornerLabel)}</th>` +
+            colKeys.map(c => `<th>${escapeHtml(c)}</th>`).join('') + '</tr></thead><tbody>';
+        rowKeys.forEach(r => {
+            html += `<tr><th>${escapeHtml(r)}</th>`;
+            colKeys.forEach(c => {
+                const v = getValue(r, c);
+                const color = valueToHeatColor(v, min, max);
+                html += `<td style="background:${color}" title="${escapeHtml(r)} / ${escapeHtml(c)}: ${formatValue(v)}">${v ? formatValue(v) : ''}</td>`;
+            });
+            html += '</tr>';
+        });
+        html += '</tbody></table>';
+        container.innerHTML = html;
+    }
+
     async function loadAnalyticsData() {
         hideBanner('analyticsBanner');
         if (!lastSheetData) await renderSheetPreview();
@@ -591,6 +686,7 @@
         }
         // Sheet layout: A=Unit(0), B=Company(1), ... J=Deduction(9), K=Outstanding(10)
         const agg = {};
+        const raw = []; // row-level data, kept for the Histogram view
         const unitSet = new Set();
         lastSheetData.rows.forEach(row => {
             const unit = row[0] || 'Unknown';
@@ -604,9 +700,11 @@
             agg[unit][company] = agg[unit][company] || { outstanding: 0, deduction: 0 };
             agg[unit][company].outstanding += outstanding;
             agg[unit][company].deduction += deduction;
+            raw.push({ unit, company, outstanding, deduction });
         });
 
         window._analyticsAgg = agg;
+        window._analyticsRaw = raw;
         const unitSelect = document.getElementById('unitFilter');
         const prevUnit = unitSelect.value;
         unitSelect.innerHTML = '<option value="All">All</option>' + [...unitSet].map(u => `<option value="${escapeHtml(u)}">${escapeHtml(u)}</option>`).join('');
@@ -634,6 +732,15 @@
         return result;
     }
 
+    function getFilteredRawOutstanding() {
+        const raw = window._analyticsRaw || [];
+        const unit = document.getElementById('unitFilter').value;
+        const company = document.getElementById('companyFilter').value;
+        return raw
+            .filter(r => (unit === 'All' || r.unit === unit) && (company === 'All' || r.company === company))
+            .map(r => r.outstanding);
+    }
+
     function populateCompanyDropdown() {
         const agg = window._analyticsAgg || {};
         const unit = document.getElementById('unitFilter').value;
@@ -646,14 +753,48 @@
         companySelect.value = [...companies].includes(prev) ? prev : 'All';
     }
 
-    const SINGLE_SERIES_TYPES = ['pie', 'doughnut', 'polarArea'];
-    const PALETTE = ['#1b4a7a', '#2e86c1', '#3498db', '#5dade2', '#85c1e9', '#e67e22', '#f39c12', '#f1c40f', '#27ae60', '#8e44ad'];
-
     function renderComparisonChart(data, type) {
+        const chartWrap = document.getElementById('comparisonChartWrap');
+        const heatmapWrap = document.getElementById('comparisonHeatmap');
+        const note = document.getElementById('analyticsChartNote');
+
+        if (type === 'heatmap') {
+            chartWrap.style.display = 'none';
+            heatmapWrap.style.display = 'block';
+            if (comparisonChart) { comparisonChart.destroy(); comparisonChart = null; }
+            note.textContent = 'Each cell = Outstanding amount for that Unit/Company combination (full matrix, ignores the Unit/Company filters above). Darker = higher.';
+            const agg = window._analyticsAgg || {};
+            const units = Object.keys(agg);
+            const companySet = new Set();
+            units.forEach(u => Object.keys(agg[u]).forEach(c => companySet.add(c)));
+            const companies = [...companySet];
+            renderHeatmapTable(
+                'comparisonHeatmap', 'Unit ⟍ Company', units, companies,
+                (u, c) => (agg[u] && agg[u][c] && agg[u][c].outstanding) || 0,
+                v => v ? Math.round(v).toLocaleString() : ''
+            );
+            return;
+        }
+
+        chartWrap.style.display = 'block';
+        heatmapWrap.style.display = 'none';
         const ctx = document.getElementById('comparisonChart').getContext('2d');
         if (comparisonChart) comparisonChart.destroy();
+
+        if (type === 'histogram') {
+            const values = getFilteredRawOutstanding();
+            const bins = computeHistogramBins(values);
+            if (!bins.labels.length) { note.textContent = 'No data to display.'; return; }
+            note.textContent = 'Distribution of Outstanding amounts across matching mails (bin ranges on the X-axis).';
+            comparisonChart = new Chart(ctx, {
+                type: 'bar',
+                data: { labels: bins.labels, datasets: [{ label: 'Number of mails', data: bins.data, backgroundColor: '#1b4a7a' }] },
+                options: { responsive: true, maintainAspectRatio: false },
+            });
+            return;
+        }
+
         const companies = Object.keys(data);
-        const note = document.getElementById('analyticsChartNote');
         if (!companies.length) { note.textContent = 'No data to display.'; return; }
 
         const outstanding = companies.map(c => data[c].outstanding);
@@ -687,6 +828,7 @@
 
     // ---------- Custom Report (pivot-style) ----------
     let reportChart;
+    let currentReportColumns = []; // ordered list of column names in currentReportRows, for table/export
 
     async function loadReportColumns() {
         hideBanner('reportBanner');
@@ -695,92 +837,214 @@
             showBanner('reportBanner', 'err', 'No data found in the sheet.');
             return;
         }
-        const groupSel = document.getElementById('reportGroupBy');
-        const valueSel = document.getElementById('reportValueColumn');
-        const opts = lastSheetData.headers.map((h, idx) => `<option value="${idx}">${escapeHtml(h)}</option>`).join('');
-        groupSel.innerHTML = opts;
-        valueSel.innerHTML = opts;
-        // Sensible defaults: group by Company (index 1), value = Outstanding (index 10) if present
-        if (lastSheetData.headers.length > 1) groupSel.value = '1';
-        if (lastSheetData.headers.length > 10) valueSel.value = '10';
+        const groupBox = document.getElementById('reportGroupByBox');
+        const valueBox = document.getElementById('reportValueBox');
+
+        // Sensible defaults: group by Company (index 1); value = Outstanding (10) if present, else Deduction (9)
+        groupBox.innerHTML = lastSheetData.headers.map((h, idx) => {
+            const checked = idx === 1 ? 'checked' : '';
+            return `<label class="checkbox-item"><input type="checkbox" class="report-group-cb" value="${idx}" ${checked} onchange="buildCustomReport()"> ${escapeHtml(h)}</label>`;
+        }).join('');
+        valueBox.innerHTML = lastSheetData.headers.map((h, idx) => {
+            const checked = (idx === 10 || idx === 9) ? 'checked' : '';
+            return `<label class="checkbox-item"><input type="checkbox" class="report-value-cb" value="${idx}" ${checked} onchange="buildCustomReport()"> ${escapeHtml(h)}</label>`;
+        }).join('');
+
         buildCustomReport();
+    }
+
+    function getCheckedIdxs(selector) {
+        return Array.from(document.querySelectorAll(selector + ':checked')).map(cb => parseInt(cb.value, 10));
+    }
+
+    function aggregate(nums, agg) {
+        if (!nums.length) return 0;
+        if (agg === 'sum') return nums.reduce((a, b) => a + b, 0);
+        if (agg === 'count') return nums.length;
+        if (agg === 'average') return nums.reduce((a, b) => a + b, 0) / nums.length;
+        if (agg === 'max') return Math.max(...nums);
+        if (agg === 'min') return Math.min(...nums);
+        return 0;
     }
 
     function buildCustomReport() {
         if (!lastSheetData || !lastSheetData.headers.length) return;
-        const groupIdx = parseInt(document.getElementById('reportGroupBy').value, 10);
-        const valueIdx = parseInt(document.getElementById('reportValueColumn').value, 10);
+        hideBanner('reportBanner');
+        const groupIdxs = getCheckedIdxs('.report-group-cb');
+        const valueIdxs = getCheckedIdxs('.report-value-cb');
         const agg = document.getElementById('reportAggregation').value;
-        if (isNaN(groupIdx)) return;
+        const chartType = document.getElementById('reportChartType').value;
+        const headers = lastSheetData.headers;
 
-        const groupLabel = lastSheetData.headers[groupIdx] || 'Group';
-        const valueLabel = lastSheetData.headers[valueIdx] || 'Value';
+        if (!groupIdxs.length) {
+            showBanner('reportBanner', 'err', 'Select at least one Group By column.');
+            currentReportRows = null;
+            renderReportTable([], []);
+            renderReportChart([], [], chartType);
+            return;
+        }
+
+        const groupLabel = groupIdxs.map(i => headers[i]).join(' + ');
         const aggLabel = agg.charAt(0).toUpperCase() + agg.slice(1);
-        const resultColName = `${aggLabel} of ${valueLabel}`;
+        const valueColNames = valueIdxs.map(vi => `${aggLabel} of ${headers[vi]}`);
 
-        const groups = {};
+        // Group rows by the composite key of all selected Group-By columns.
+        const groups = {}; // key -> { count, perValue: { valueIdx: [nums] } }
         lastSheetData.rows.forEach(row => {
-            const key = row[groupIdx] || 'Unknown';
-            const raw = valueIdx >= 0 ? (row[valueIdx] || '') : '';
-            const num = parseFloat(raw.toString().replace(/[^\d.-]/g, '')) || 0;
-            if (!groups[key]) groups[key] = { sum: 0, count: 0 };
-            groups[key].sum += num;
+            const key = groupIdxs.map(i => row[i] || 'Unknown').join(' | ');
+            if (!groups[key]) {
+                groups[key] = { count: 0, perValue: {} };
+                valueIdxs.forEach(vi => { groups[key].perValue[vi] = []; });
+            }
             groups[key].count += 1;
+            valueIdxs.forEach(vi => {
+                const raw = row[vi] || '';
+                const num = parseFloat(raw.toString().replace(/[^\d.-]/g, '')) || 0;
+                groups[key].perValue[vi].push(num);
+            });
         });
 
-        currentReportRows = Object.keys(groups).map(k => {
-            let value;
-            if (agg === 'sum') value = groups[k].sum;
-            else if (agg === 'count') value = groups[k].count;
-            else value = groups[k].count ? groups[k].sum / groups[k].count : 0;
+        currentReportColumns = [groupLabel, ...valueColNames];
+        currentReportRows = Object.keys(groups).map(key => {
             const rowObj = {};
-            rowObj[groupLabel] = k;
-            rowObj[resultColName] = Math.round(value * 100) / 100;
+            rowObj[groupLabel] = key;
+            valueIdxs.forEach((vi, idx) => {
+                const val = agg === 'count' ? groups[key].count : aggregate(groups[key].perValue[vi], agg);
+                rowObj[valueColNames[idx]] = Math.round(val * 100) / 100;
+            });
+            // If no value column chosen at all, still show row counts.
+            if (!valueIdxs.length) rowObj['Count'] = groups[key].count;
             return rowObj;
         });
+        if (!valueIdxs.length && !currentReportColumns.includes('Count')) currentReportColumns.push('Count');
 
-        renderReportTable(groupLabel, resultColName);
-        renderReportChart(groupLabel, resultColName);
+        renderReportTable(currentReportColumns, currentReportRows);
+        renderReportChart(groupLabel, valueColNames.length ? valueColNames : ['Count'], chartType, valueIdxs, groupIdxs, agg, headers);
     }
 
-    function renderReportTable(groupLabel, resultColName) {
+    function renderReportTable(columns, rows) {
         const container = document.getElementById('reportTable');
-        if (!currentReportRows || !currentReportRows.length) {
+        if (!rows || !rows.length) {
             container.innerHTML = '<p style="padding:16px;color:#94a3b8;">No data yet.</p>';
             return;
         }
-        let html = `<table><thead><tr><th>${escapeHtml(groupLabel)}</th><th>${escapeHtml(resultColName)}</th></tr></thead><tbody>`;
-        currentReportRows.forEach(r => {
-            html += `<tr><td>${escapeHtml(r[groupLabel])}</td><td>${escapeHtml(r[resultColName])}</td></tr>`;
+        let html = '<table><thead><tr>' + columns.map(c => `<th>${escapeHtml(c)}</th>`).join('') + '</tr></thead><tbody>';
+        rows.forEach(r => {
+            html += '<tr>' + columns.map(c => `<td>${escapeHtml(r[c])}</td>`).join('') + '</tr>';
         });
         html += '</tbody></table>';
         container.innerHTML = html;
     }
 
-    function renderReportChart(groupLabel, resultColName) {
+    function renderReportChart(groupLabel, valueColNames, chartType, valueIdxs, groupIdxs, agg, headers) {
+        const chartWrap = document.getElementById('reportChartWrap');
+        const heatmapWrap = document.getElementById('reportHeatmap');
+
+        if (chartType === 'heatmap') {
+            chartWrap.style.display = 'none';
+            heatmapWrap.style.display = 'block';
+            if (reportChart) { reportChart.destroy(); reportChart = null; }
+
+            if (!groupIdxs || groupIdxs.length < 2) {
+                heatmapWrap.innerHTML = '<p style="padding:16px;color:#94a3b8;">Heatmap needs at least 2 Group By columns selected (one becomes rows, the other becomes columns).</p>';
+                return;
+            }
+            const rowIdx = groupIdxs[0], colIdx = groupIdxs[1];
+            const valueIdx = valueIdxs && valueIdxs.length ? valueIdxs[0] : null;
+
+            const matrix = {};
+            const rowKeysSet = new Set(), colKeysSet = new Set();
+            lastSheetData.rows.forEach(row => {
+                const rk = row[rowIdx] || 'Unknown';
+                const ck = row[colIdx] || 'Unknown';
+                rowKeysSet.add(rk); colKeysSet.add(ck);
+                matrix[rk] = matrix[rk] || {};
+                matrix[rk][ck] = matrix[rk][ck] || [];
+                const raw = valueIdx !== null ? (row[valueIdx] || '') : '';
+                const num = parseFloat(raw.toString().replace(/[^\d.-]/g, '')) || 0;
+                matrix[rk][ck].push(num);
+            });
+
+            const cornerLabel = `${headers[rowIdx]} ⟍ ${headers[colIdx]}`;
+            renderHeatmapTable(
+                'reportHeatmap', cornerLabel, [...rowKeysSet], [...colKeysSet],
+                (r, c) => {
+                    const arr = (matrix[r] && matrix[r][c]) || [];
+                    return valueIdx !== null ? aggregate(arr, agg) : arr.length;
+                },
+                v => (Math.round(v * 100) / 100).toLocaleString()
+            );
+            return;
+        }
+
+        chartWrap.style.display = 'block';
+        heatmapWrap.style.display = 'none';
         const ctx = document.getElementById('reportChart').getContext('2d');
         if (reportChart) reportChart.destroy();
+
+        if (chartType === 'histogram') {
+            if (!lastSheetData || !valueIdxs || !valueIdxs.length) return;
+            const firstIdx = valueIdxs[0];
+            const nums = lastSheetData.rows.map(row => parseFloat((row[firstIdx] || '0').toString().replace(/[^\d.-]/g, '')) || 0);
+            const bins = computeHistogramBins(nums);
+            if (!bins.labels.length) return;
+            reportChart = new Chart(ctx, {
+                type: 'bar',
+                data: { labels: bins.labels, datasets: [{ label: `Distribution of ${lastSheetData.headers[firstIdx]}`, data: bins.data, backgroundColor: '#1b4a7a' }] },
+                options: { responsive: true, maintainAspectRatio: false },
+            });
+            return;
+        }
+
         if (!currentReportRows || !currentReportRows.length) return;
-        const type = document.getElementById('reportChartType').value;
         const labels = currentReportRows.map(r => r[groupLabel]);
-        const values = currentReportRows.map(r => r[resultColName]);
+
+        let datasets;
+        if (SINGLE_SERIES_TYPES.includes(chartType)) {
+            const colName = valueColNames[0];
+            datasets = [{ label: colName, data: currentReportRows.map(r => r[colName]), backgroundColor: PALETTE }];
+        } else {
+            datasets = valueColNames.map((colName, i) => ({
+                label: colName,
+                data: currentReportRows.map(r => r[colName]),
+                backgroundColor: PALETTE[i % PALETTE.length],
+                borderColor: PALETTE[i % PALETTE.length],
+            }));
+        }
 
         reportChart = new Chart(ctx, {
-            type: type,
-            data: {
-                labels,
-                datasets: [{ label: resultColName, data: values, backgroundColor: PALETTE, borderColor: '#1b4a7a' }],
-            },
+            type: chartType,
+            data: { labels, datasets },
             options: { responsive: true, maintainAspectRatio: false },
         });
     }
 
-    function exportReportToExcel() {
+    async function exportReportToExcel() {
         if (!currentReportRows || !currentReportRows.length) { alert('Build a report first.'); return; }
-        const ws = XLSX.utils.json_to_sheet(currentReportRows);
-        const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, 'Report');
-        XLSX.writeFile(wb, 'custom_report.xlsx');
+        try {
+            const wb = new ExcelJS.Workbook();
+            const ws = wb.addWorksheet('Report');
+            ws.addRow(currentReportColumns);
+            ws.getRow(1).font = { bold: true };
+            currentReportRows.forEach(r => ws.addRow(currentReportColumns.map(c => r[c])));
+            ws.columns.forEach(col => { col.width = 22; });
+
+            if (reportChart) {
+                const imageBase64 = reportChart.toBase64Image();
+                const imageId = wb.addImage({ base64: imageBase64, extension: 'png' });
+                const startRow = currentReportRows.length + 3;
+                ws.addImage(imageId, { tl: { col: 0, row: startRow }, ext: { width: 560, height: 320 } });
+            }
+
+            const buffer = await wb.xlsx.writeBuffer();
+            const blob = new Blob([buffer], { type: 'application/octet-stream' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = 'custom_report.xlsx';
+            link.click();
+        } catch (e) {
+            alert('Excel export failed: ' + e.message);
+        }
     }
 
     // ---------- AI-Robo (Q&A only, restricted to this tool's sheet data) ----------
