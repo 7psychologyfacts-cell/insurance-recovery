@@ -1,11 +1,11 @@
 <!DOCTYPE html>
-<html lang="hi">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Insurance Recovery – Shalby Dashboard</title>
+    <title>Insurance Recovery Dashboard</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <style>
         * { margin:0; padding:0; box-sizing:border-box; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
         body { background: #f0f4f8; display:flex; justify-content:center; align-items:flex-start; min-height:100vh; padding:20px; }
@@ -18,7 +18,7 @@
         .status-circle.busy { background:#e67e22; }
         .status-circle.error { background:#e74c3c; }
         .tabs { display:flex; background:#f8fafd; border-bottom:1px solid #e9edf4; padding:0 32px; gap:4px; overflow-x:auto; }
-        .tab { padding:14px 24px; cursor:pointer; font-weight:500; color:#64748b; border-bottom:3px solid transparent; transition:0.2s; white-space:nowrap; }
+        .tab { padding:14px 22px; cursor:pointer; font-weight:500; color:#64748b; border-bottom:3px solid transparent; transition:0.2s; white-space:nowrap; }
         .tab.active { color:#1b4a7a; border-bottom-color:#1b4a7a; background:#ffffff; border-radius:8px 8px 0 0; }
         .tab:hover { color:#1b4a7a; }
         .tab-content { display:none; padding:28px 32px; }
@@ -49,7 +49,7 @@
         .stat-card { background:#f8fafd; border:1px solid #e9edf4; border-radius:12px; padding:16px 20px; flex:1; min-width:120px; text-align:center; }
         .stat-card .stat-value { font-size:2rem; font-weight:700; color:#0f2b4b; }
         .stat-card .stat-label { font-size:0.85rem; color:#64748b; margin-top:4px; }
-        .log-table-wrapper { max-height:300px; overflow-y:auto; border:1px solid #e9edf4; border-radius:10px; margin-top:12px; }
+        .log-table-wrapper { max-height:340px; overflow-y:auto; border:1px solid #e9edf4; border-radius:10px; margin-top:12px; }
         .log-table { width:100%; border-collapse:collapse; font-size:0.85rem; }
         .log-table th { background:#f1f5f9; padding:10px; text-align:left; font-weight:600; color:#1e293b; position:sticky; top:0; }
         .log-table td { padding:8px 10px; border-bottom:1px solid #e9edf4; }
@@ -62,23 +62,25 @@
         .msg-banner.show { display:block; }
         .msg-banner.err { background:#fdecea; color:#b3261e; border:1px solid #f5c2c0; }
         .msg-banner.ok { background:#eafaf0; color:#1e7e34; border:1px solid #bfe8cd; }
+        .chart-canvas-wrap { position:relative; height:340px; width:100%; }
 
         .robot-btn { position:fixed; bottom:30px; right:30px; width:65px; height:65px; background: #ff6f61; border-radius:50%; box-shadow:0 8px 20px rgba(0,0,0,0.2); cursor:pointer; display:flex; align-items:center; justify-content:center; font-size:2.2rem; z-index:999; transition:0.3s; border: none; }
         .robot-btn:hover { transform:scale(1.1); }
         .robot-popup { position:fixed; bottom:110px; right:30px; width:380px; max-height:550px; background:white; border-radius:20px; box-shadow:0 20px 50px rgba(0,0,0,0.2); z-index:1000; display:none; flex-direction:column; overflow:hidden; border:2px solid #ff6f61; }
         .robot-popup.active { display:flex; }
         .robot-header { background: #ff6f61; color:white; padding:16px; display:flex; align-items:center; gap:10px; font-weight:600; }
-        .robot-body { padding:16px; overflow-y:auto; max-height:400px; background:#fafafa; }
-        .robot-body .ai-chat-box { height:200px; overflow-y:auto; background:white; border-radius:10px; padding:10px; margin-bottom:10px; font-size:0.85rem; }
+        .robot-body { padding:16px; overflow-y:auto; max-height:460px; background:#fafafa; }
+        .robot-body .ai-chat-box { height:340px; overflow-y:auto; background:white; border-radius:10px; padding:10px; margin-bottom:10px; font-size:0.85rem; }
         .robot-body .ai-chat-box .msg { margin-bottom:8px; }
         .robot-body .ai-chat-box .msg.me { color:#1b4a7a; font-weight:600; }
         .robot-body .ai-chat-box .msg.bot { color:#2c3e50; }
-        .robot-body .form-group { margin-bottom:12px; }
         .close-btn { margin-left:auto; background:none; border:none; color:white; font-size:1.5rem; cursor:pointer; }
 
-        .chart-controls { display:flex; gap:15px; align-items:center; margin-bottom:20px; flex-wrap:wrap; }
+        .chart-controls { display:flex; gap:15px; align-items:flex-end; margin-bottom:20px; flex-wrap:wrap; }
         .chart-row { display:flex; gap:20px; flex-wrap:wrap; }
         .chart-box { flex:1; min-width:300px; background:#f8fafd; border-radius:14px; padding:20px; border:1px solid #e9edf4; margin-bottom:20px; }
+        .report-grid { display:grid; grid-template-columns: 340px 1fr; gap:24px; align-items:start; }
+        @media (max-width:900px) { .report-grid { grid-template-columns: 1fr; } }
         @media (max-width:600px) { .header h1 { font-size:1.3rem; } .config-grid { grid-template-columns:1fr; } }
     </style>
 </head>
@@ -86,18 +88,19 @@
 <div class="dashboard">
     <div class="header">
         <h1>🛡️ Insurance Recovery Pipeline</h1>
-        <div class="status" id="statusIndicator"><span class="status-circle active" id="statusCircle"></span> <span id="statusText">तैयार</span></div>
+        <div class="status" id="statusIndicator"><span class="status-circle active" id="statusCircle"></span> <span id="statusText">Ready</span></div>
     </div>
 
     <div class="tabs">
-        <div class="tab active" data-tab="settings">⚙️ सेटिंग्स</div>
-        <div class="tab" data-tab="live">📡 लाइव मॉनिटर</div>
-        <div class="tab" data-tab="sheet">📊 शीट प्रीव्यू</div>
-        <div class="tab" data-tab="filters">🛡️ फ़िल्टर</div>
-        <div class="tab" data-tab="analytics">📈 एनालिटिक्स</div>
+        <div class="tab active" data-tab="settings">⚙️ Settings</div>
+        <div class="tab" data-tab="live">📡 Live Monitor</div>
+        <div class="tab" data-tab="sheet">📊 Sheet Preview</div>
+        <div class="tab" data-tab="filters">🛡️ Filters</div>
+        <div class="tab" data-tab="analytics">📈 Analytics</div>
+        <div class="tab" data-tab="report">🧮 Custom Report</div>
     </div>
 
-    <!-- सेटिंग्स टैब -->
+    <!-- SETTINGS TAB -->
     <div class="tab-content active" id="settings">
         <div class="msg-banner" id="settingsBanner"></div>
         <div class="config-grid">
@@ -105,143 +108,183 @@
                 <h3>🔑 Google Services</h3>
                 <div class="form-group">
                     <label>Gemini API Key</label>
-                    <input type="password" id="apiKey" placeholder="server env se load ho sakti hai, ya yahan daalein">
+                    <input type="password" id="apiKey" placeholder="Can be pre-set on the server, or enter here">
                     <small id="apiKeyHint"></small>
                 </div>
                 <div class="form-group"><label>Model</label>
                     <select id="geminiModel">
-                        <option value="gemini-3.1-flash-lite" selected>Gemini 3.1 Flash‑Lite</option>
+                        <option value="gemini-3.1-flash-lite" selected>Gemini 3.1 Flash-Lite</option>
                         <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
                         <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
                     </select>
                 </div>
                 <div class="form-group"><label>Sheet URL</label><input id="sheetUrl"></div>
-                <div class="form-group"><label>वर्कशीट नाम</label><input id="worksheetName" value="Sheet1"></div>
+                <div class="form-group"><label>Worksheet Name</label><input id="worksheetName" value="Sheet1"></div>
                 <div class="form-row">
-                    <div class="form-group"><label>From (DD-Mon-YYYY)</label><input id="fromDate" placeholder="01-Jun-2026"></div>
-                    <div class="form-group"><label>To (DD-Mon-YYYY)</label><input id="toDate" placeholder="18-Jun-2026"></div>
+                    <div class="form-group"><label>From Date</label><input type="date" id="fromDate"></div>
+                    <div class="form-group"><label>To Date</label><input type="date" id="toDate"></div>
                 </div>
+                <small>Pick dates from the calendar — no manual typing needed.</small>
             </div>
             <div class="card">
-                <h3>📬 IMAP कॉन्फ़िगरेशन</h3>
+                <h3>📬 IMAP Configuration</h3>
                 <div class="form-row">
-                    <div class="form-group"><label>होस्ट</label><input id="imapHost"></div>
-                    <div class="form-group"><label>पोर्ट</label><input id="imapPort" type="number" value="993"></div>
+                    <div class="form-group"><label>Host</label><input id="imapHost"></div>
+                    <div class="form-group"><label>Port</label><input id="imapPort" type="number" value="993"></div>
                 </div>
                 <div class="form-row">
-                    <div class="form-group"><label>यूज़र</label><input id="imapUser"></div>
-                    <div class="form-group"><label>पासवर्ड</label><input type="password" id="imapPass" placeholder="server env se load ho sakta hai"></div>
+                    <div class="form-group"><label>User</label><input id="imapUser"></div>
+                    <div class="form-group"><label>Password</label><input type="password" id="imapPass" placeholder="Can be pre-set on the server"></div>
                 </div>
-                <div class="form-group"><label>फ़ोल्डर चुनें</label><div class="checkbox-group" id="folderCheckboxes"></div></div>
-                <button class="btn btn-primary" onclick="saveSettings()">💾 सेटिंग्स सेव करें (browser me)</button>
-                <button class="btn btn-outline" onclick="loadDefaults()">↺ सर्वर डिफ़ॉल्ट लोड करें</button>
+                <div class="form-group"><label>Select Folders</label><div class="checkbox-group" id="folderCheckboxes"></div></div>
+                <button class="btn btn-primary" onclick="saveSettings()">💾 Save Settings (in this browser)</button>
+                <button class="btn btn-outline" onclick="loadDefaults()">↺ Load Server Defaults</button>
             </div>
         </div>
     </div>
 
-    <!-- लाइव मॉनिटर टैब -->
+    <!-- LIVE MONITOR TAB -->
     <div class="tab-content" id="live">
         <div class="msg-banner" id="liveBanner"></div>
         <div class="stats-row">
-            <div class="stat-card"><div class="stat-value" id="processedCount">0</div><div class="stat-label">प्रोसेस्ड</div></div>
-            <div class="stat-card"><div class="stat-value" id="skippedCount">0</div><div class="stat-label">स्किप्ड</div></div>
-            <div class="stat-card"><div class="stat-value" id="errorCount">0</div><div class="stat-label">एरर्स</div></div>
+            <div class="stat-card"><div class="stat-value" id="processedCount">0</div><div class="stat-label">Processed</div></div>
+            <div class="stat-card"><div class="stat-value" id="skippedCount">0</div><div class="stat-label">Skipped</div></div>
+            <div class="stat-card"><div class="stat-value" id="errorCount">0</div><div class="stat-label">Errors</div></div>
+            <div class="stat-card"><div class="stat-value" id="remainingCount">0</div><div class="stat-label">Remaining</div></div>
         </div>
         <div class="progress-container"><div class="progress-bar" id="progressBar"></div></div>
         <div style="display:flex; gap:12px; margin-bottom:16px;">
-            <button class="btn btn-primary" id="startBtn" onclick="startPipeline()">▶️ पाइपलाइन चलाएँ</button>
-            <button class="btn btn-outline" onclick="stopPipeline()">⏹️ रोकें</button>
+            <button class="btn btn-primary" id="startBtn" onclick="startPipeline()">▶️ Run Pipeline</button>
+            <button class="btn btn-outline" onclick="stopPipeline()">⏹️ Stop</button>
         </div>
-        <p style="font-size:0.8rem;color:#94a3b8;margin-bottom:10px;">नोट: पाइपलाइन सर्वर पर एक ही रिक्वेस्ट में पूरी चलती है — बहुत सारी ईमेल होने पर इसमें कुछ मिनट लग सकते हैं, कृपया tab band na karein.</p>
-        <h3>📋 ईमेल लॉग</h3>
+        <p style="font-size:0.8rem;color:#94a3b8;margin-bottom:10px;">Each email is fetched and processed one at a time, so this table updates live as every mail finishes — please don't close the tab while it's running.</p>
+        <h3>📋 Email Log</h3>
         <div class="log-table-wrapper">
             <table class="log-table" id="logTable"><thead><tr><th>Subject</th><th>From</th><th>Company</th><th>Amount</th><th>Status</th><th>Date</th></tr></thead><tbody></tbody></table>
         </div>
     </div>
 
-    <!-- शीट प्रीव्यू टैब -->
+    <!-- SHEET PREVIEW TAB -->
     <div class="tab-content" id="sheet">
         <div class="msg-banner" id="sheetBanner"></div>
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; flex-wrap:wrap; gap:10px;">
-            <h3>📋 Google Sheet डेटा प्रीव्यू</h3>
+            <h3>📋 Google Sheet Data Preview</h3>
             <div>
-                <button class="btn btn-outline" onclick="renderSheetPreview()">🔄 रीफ़्रेश</button>
-                <button class="btn btn-outline" onclick="downloadCSV()">📥 CSV डाउनलोड</button>
-                <button class="btn btn-outline" onclick="downloadPDF()">📄 PDF डाउनलोड</button>
+                <button class="btn btn-outline" onclick="renderSheetPreview()">🔄 Refresh</button>
+                <button class="btn btn-outline" onclick="downloadExcel()">📊 Export to Excel</button>
             </div>
         </div>
         <div class="sheet-preview" id="sheetPreview"></div>
     </div>
 
-    <!-- फ़िल्टर टैब -->
+    <!-- FILTERS TAB -->
     <div class="tab-content" id="filters">
         <div class="card">
-            <h3>🛡️ कस्टम फ़िल्टर (Blacklist)</h3>
-            <div class="form-group"><label>Subject ब्लैकलिस्ट (हर कीवर्ड अलग लाइन में)</label><textarea id="subjectBlacklist"></textarea></div>
-            <div class="form-group"><label>Sender ब्लैकलिस्ट</label><textarea id="senderBlacklist"></textarea></div>
-            <button class="btn btn-primary" onclick="saveFilters()">💾 फ़िल्टर सेव करें</button>
-            <p style="font-size:0.78rem;color:#94a3b8;margin-top:8px;">यह फ़िल्टर अगली बार "पाइपलाइन चलाएँ" दबाने पर पाइपलाइन को भेजा जाएगा — matching mail ko सर्वर side पर skip कर दिया जाता है।</p>
+            <h3>🛡️ Custom Filters (Blacklist)</h3>
+            <div class="form-group"><label>Subject Blacklist (one keyword per line)</label><textarea id="subjectBlacklist"></textarea></div>
+            <div class="form-group"><label>Sender Blacklist</label><textarea id="senderBlacklist"></textarea></div>
+            <button class="btn btn-primary" onclick="saveFilters()">💾 Save Filters</button>
+            <p style="font-size:0.78rem;color:#94a3b8;margin-top:8px;">These filters are sent to the pipeline the next time you click "Run Pipeline" — matching mails are skipped on the server side.</p>
         </div>
     </div>
 
-    <!-- एनालिटिक्स टैब -->
+    <!-- ANALYTICS TAB -->
     <div class="tab-content" id="analytics">
         <div class="msg-banner" id="analyticsBanner"></div>
         <div class="chart-controls">
             <div class="form-group" style="margin:0;">
-                <label>यूनिट</label>
-                <select id="unitFilter" onchange="applyFilters()"><option value="All">सभी</option></select>
+                <label>Unit</label>
+                <select id="unitFilter" onchange="applyFilters()"><option value="All">All</option></select>
             </div>
             <div class="form-group" style="margin:0;">
-                <label>कंपनी</label>
-                <select id="companyFilter" onchange="applyFilters()"><option value="All">सभी</option></select>
+                <label>Company</label>
+                <select id="companyFilter" onchange="applyFilters()"><option value="All">All</option></select>
             </div>
             <div class="form-group" style="margin:0;">
-                <label>चार्ट टाइप</label>
+                <label>Chart Type</label>
                 <select id="chartTypeSelector" onchange="applyFilters()">
-                    <option value="bar" selected>बार चार्ट</option>
-                    <option value="pie">पाई चार्ट</option>
+                    <option value="bar" selected>Bar</option>
+                    <option value="line">Line</option>
+                    <option value="pie">Pie</option>
+                    <option value="doughnut">Doughnut</option>
+                    <option value="radar">Radar</option>
+                    <option value="polarArea">Polar Area</option>
                 </select>
             </div>
-            <button class="btn btn-outline" onclick="loadAnalyticsData()" style="margin:0;">🔄 डेटा लोड करें</button>
+            <button class="btn btn-outline" onclick="loadAnalyticsData()" style="margin:0;">🔄 Load Data</button>
         </div>
         <div class="chart-row">
             <div class="chart-box">
-                <h3>📊 कंपनी-वार बकाया/कटौती</h3>
-                <canvas id="comparisonChart" height="80"></canvas>
+                <h3>📊 Company-wise Outstanding / Deduction</h3>
+                <small id="analyticsChartNote" style="display:block;margin-bottom:8px;color:#94a3b8;"></small>
+                <div class="chart-canvas-wrap"><canvas id="comparisonChart"></canvas></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- CUSTOM REPORT TAB -->
+    <div class="tab-content" id="report">
+        <div class="msg-banner" id="reportBanner"></div>
+        <div class="report-grid">
+            <div class="card">
+                <h3>🧮 Build Report</h3>
+                <div class="form-group"><label>Group By Column</label><select id="reportGroupBy" onchange="buildCustomReport()"></select></div>
+                <div class="form-group"><label>Value Column</label><select id="reportValueColumn" onchange="buildCustomReport()"></select></div>
+                <div class="form-group"><label>Aggregation</label>
+                    <select id="reportAggregation" onchange="buildCustomReport()">
+                        <option value="sum" selected>Sum</option>
+                        <option value="count">Count</option>
+                        <option value="average">Average</option>
+                    </select>
+                </div>
+                <div class="form-group"><label>Chart Type</label>
+                    <select id="reportChartType" onchange="buildCustomReport()">
+                        <option value="bar" selected>Bar</option>
+                        <option value="line">Line</option>
+                        <option value="pie">Pie</option>
+                        <option value="doughnut">Doughnut</option>
+                        <option value="radar">Radar</option>
+                        <option value="polarArea">Polar Area</option>
+                    </select>
+                </div>
+                <button class="btn btn-outline" onclick="loadReportColumns()">🔄 Load Sheet Columns</button>
+                <button class="btn btn-primary" onclick="exportReportToExcel()">📊 Export to Excel</button>
+            </div>
+            <div>
+                <div class="chart-box">
+                    <h3>Live Preview</h3>
+                    <div class="chart-canvas-wrap"><canvas id="reportChart"></canvas></div>
+                </div>
+                <div class="chart-box">
+                    <h3>Report Table</h3>
+                    <div class="sheet-preview" id="reportTable"></div>
+                </div>
             </div>
         </div>
     </div>
 </div>
 
-<!-- फ़्लोटिंग रोबोट बटन और पॉपअप -->
+<!-- FLOATING AI-ROBO BUTTON -->
 <button class="robot-btn" id="robotButton" onclick="toggleRobot()">🤖</button>
 <div class="robot-popup" id="robotPopup">
     <div class="robot-header">
-        <span>🤖 AI दोस्त – रोबो चाचा</span>
+        <span>🤖 AI-Robo</span>
         <button class="close-btn" onclick="toggleRobot()">✕</button>
     </div>
     <div class="robot-body">
+        <small style="display:block;margin-bottom:8px;color:#94a3b8;">Ask questions about the data in your sheet — answers come only from this tool's own data, nothing else.</small>
         <div class="ai-chat-box" id="chatBox"></div>
         <div class="form-row">
-            <input type="text" id="chatInput" placeholder="पूछो कुछ भी...">
-            <button class="btn btn-primary" onclick="sendChat()" style="margin:0;">भेजें</button>
+            <input type="text" id="chatInput" placeholder="Ask a question...">
+            <button class="btn btn-primary" onclick="sendChat()" style="margin:0;">Send</button>
         </div>
-        <hr style="margin:14px 0;">
-        <h4>✉️ ऑटो रिप्लाई जनरेटर</h4>
-        <div class="form-group"><input id="replyCompany" placeholder="कंपनी का नाम"></div>
-        <div class="form-group"><input id="replyAmount" placeholder="राशि"></div>
-        <button class="btn btn-primary" onclick="generateReply()">ड्राफ़्ट बनाएँ</button>
-        <textarea id="replyOutput" rows="4" readonly style="margin-top:10px;"></textarea>
-        <button class="btn btn-outline" onclick="analyzePriority()" style="margin-top:8px;">🧠 स्मार्ट प्रायोरिटी</button>
-        <div id="priorityResult" style="margin-top:8px;"></div>
     </div>
 </div>
 
 <script>
-    // ---------- डिफ़ॉल्ट फ़ोल्डर लिस्ट (server /api/defaults से भी आ सकती है) ----------
     let serverDefaults = {};
-    let lastSheetData = null; // { headers, rows } — CSV/PDF/analytics ke liye reuse hota hai
+    let lastSheetData = null; // { headers, rows } — reused by sheet preview / analytics / report
+    let currentReportRows = null;
 
     function setStatus(state, text) {
         const circle = document.getElementById('statusCircle');
@@ -258,6 +301,33 @@
         document.getElementById(id).className = 'msg-banner';
     }
 
+    function escapeHtml(str) {
+        return String(str ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+    }
+
+    // Reads a response as text first, then tries JSON — so a server crash page
+    // never causes a raw "Unexpected token" exception in the UI.
+    async function safeJson(res) {
+        const text = await res.text();
+        try {
+            return JSON.parse(text);
+        } catch (e) {
+            return { ok: false, error: 'Server returned an unexpected response: ' + text.slice(0, 200) };
+        }
+    }
+
+    function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+    // ---------- Date helpers (native <input type="date"> -> DD-Mon-YYYY for backend) ----------
+    const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    function isoToImapDate(iso) {
+        if (!iso) return '';
+        const [y, m, d] = iso.split('-');
+        if (!y || !m || !d) return '';
+        return `${d}-${MONTHS[parseInt(m, 10) - 1]}-${y}`;
+    }
+
+    // ---------- Settings ----------
     function renderFolders(folders, checkedFolders) {
         const container = document.getElementById('folderCheckboxes');
         container.innerHTML = '';
@@ -276,8 +346,8 @@
             geminiModel: document.getElementById('geminiModel').value,
             sheetUrl: document.getElementById('sheetUrl').value,
             worksheetName: document.getElementById('worksheetName').value,
-            fromDate: document.getElementById('fromDate').value,
-            toDate: document.getElementById('toDate').value,
+            fromDate: isoToImapDate(document.getElementById('fromDate').value),
+            toDate: isoToImapDate(document.getElementById('toDate').value),
             imapHost: document.getElementById('imapHost').value,
             imapPort: document.getElementById('imapPort').value,
             imapUser: document.getElementById('imapUser').value,
@@ -288,13 +358,15 @@
         };
     }
 
+    // Settings persisted in localStorage keep the native date inputs as plain
+    // ISO strings (isoFromDate/isoToDate) since that's what <input type="date"> needs.
     function applyFormSettings(s) {
         document.getElementById('apiKey').value = s.geminiApiKey || '';
         document.getElementById('geminiModel').value = s.geminiModel || 'gemini-3.1-flash-lite';
         document.getElementById('sheetUrl').value = s.sheetUrl || '';
         document.getElementById('worksheetName').value = s.worksheetName || 'Sheet1';
-        document.getElementById('fromDate').value = s.fromDate || '';
-        document.getElementById('toDate').value = s.toDate || '';
+        document.getElementById('fromDate').value = s.isoFromDate || '';
+        document.getElementById('toDate').value = s.isoToDate || '';
         document.getElementById('imapHost').value = s.imapHost || '';
         document.getElementById('imapPort').value = s.imapPort || '993';
         document.getElementById('imapUser').value = s.imapUser || '';
@@ -305,14 +377,17 @@
     }
 
     function saveSettings() {
-        localStorage.setItem('pipelineSettings', JSON.stringify(getFormSettings()));
-        showBanner('settingsBanner', 'ok', '✅ सेटिंग्स इस browser में सेव हो गईं।');
+        const s = getFormSettings();
+        s.isoFromDate = document.getElementById('fromDate').value;
+        s.isoToDate = document.getElementById('toDate').value;
+        localStorage.setItem('pipelineSettings', JSON.stringify(s));
+        showBanner('settingsBanner', 'ok', '✅ Settings saved in this browser.');
     }
 
     function loadDefaults() {
         localStorage.removeItem('pipelineSettings');
         applyFormSettings(serverDefaults);
-        showBanner('settingsBanner', 'ok', '↺ सर्वर डिफ़ॉल्ट लोड कर दिए गए।');
+        showBanner('settingsBanner', 'ok', '↺ Server defaults loaded.');
     }
 
     function saveFilters() {
@@ -320,13 +395,13 @@
         current.subjectBlacklist = document.getElementById('subjectBlacklist').value;
         current.senderBlacklist = document.getElementById('senderBlacklist').value;
         localStorage.setItem('pipelineSettings', JSON.stringify(current));
-        alert('फ़िल्टर सेव हो गए — अगली पाइपलाइन run me use honge।');
+        alert('Filters saved — they will be used on the next pipeline run.');
     }
 
     async function loadSettings() {
         try {
             const res = await fetch('/api/defaults');
-            serverDefaults = await res.json();
+            serverDefaults = await safeJson(res);
         } catch (e) {
             serverDefaults = { folders: [] };
         }
@@ -335,11 +410,11 @@
         applyFormSettings(s);
 
         document.getElementById('apiKeyHint').textContent = serverDefaults.hasGeminiKey
-            ? '✅ Server env me Gemini key already set hai — khaali chhod sakte hain.'
-            : '⚠️ Server env me koi key set nahi — yahan daalna zaroori hai.';
+            ? '✅ A Gemini key is already set on the server — you can leave this blank.'
+            : '⚠️ No key set on the server — this field is required.';
     }
 
-    // टैब स्विचिंग
+    // Tab switching
     document.querySelectorAll('.tab').forEach(tab => {
         tab.addEventListener('click', () => {
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
@@ -348,6 +423,7 @@
             document.getElementById(tab.dataset.tab).classList.add('active');
             if (tab.dataset.tab === 'sheet' && !lastSheetData) renderSheetPreview();
             if (tab.dataset.tab === 'analytics' && !lastSheetData) loadAnalyticsData();
+            if (tab.dataset.tab === 'report' && !lastSheetData) loadReportColumns();
         });
     });
 
@@ -355,14 +431,15 @@
         document.getElementById('robotPopup').classList.toggle('active');
     }
 
-    // ---------- पाइपलाइन (असली backend call) ----------
+    // ---------- Pipeline: list all pending mails, then process one at a time ----------
     let isRunning = false;
-    let abortController = null;
+    let stopRequested = false;
 
     function resetCounters() {
         document.getElementById('processedCount').textContent = '0';
         document.getElementById('skippedCount').textContent = '0';
         document.getElementById('errorCount').textContent = '0';
+        document.getElementById('remainingCount').textContent = '0';
         document.getElementById('progressBar').style.width = '0%';
         document.querySelector('#logTable tbody').innerHTML = '';
     }
@@ -373,75 +450,106 @@
         row.innerHTML = `<td>${escapeHtml(subject)}</td><td>${escapeHtml(from)}</td><td>${escapeHtml(company)}</td><td>${escapeHtml(String(amount))}</td><td>${escapeHtml(status)}</td><td>${escapeHtml(date)}</td>`;
     }
 
-    function escapeHtml(str) {
-        return String(str ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
-    }
-
     async function startPipeline() {
         if (isRunning) return;
         isRunning = true;
+        stopRequested = false;
         hideBanner('liveBanner');
         resetCounters();
         const btn = document.getElementById('startBtn');
         btn.disabled = true;
-        btn.textContent = '⏳ चल रहा है...';
-        setStatus('busy', 'पाइपलाइन चल रही है...');
-        document.getElementById('progressBar').style.width = '15%';
+        btn.textContent = '⏳ Running...';
+        setStatus('busy', 'Listing emails...');
 
-        abortController = new AbortController();
+        const cfg = getFormSettings();
+        let processed = 0, skipped = 0, errors = 0;
+
         try {
-            const res = await fetch('/api/run', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(getFormSettings()),
-                signal: abortController.signal,
+            const listRes = await fetch('/api/list-emails', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(cfg),
             });
-            const data = await res.json();
-            document.getElementById('progressBar').style.width = '100%';
-
-            if (!data.ok) {
-                setStatus('error', 'एरर आई');
-                showBanner('liveBanner', 'err', '❌ ' + data.error);
+            const listData = await safeJson(listRes);
+            if (!listData.ok) {
+                showBanner('liveBanner', 'err', '❌ ' + listData.error);
+                setStatus('error', 'Error');
                 return;
             }
 
-            document.getElementById('processedCount').textContent = data.processed;
-            document.getElementById('skippedCount').textContent = data.skipped;
-            document.getElementById('errorCount').textContent = data.errors;
-            (data.logs || []).forEach(l => addLogEntry(l.subject, l.from, l.company, l.amount, l.status, l.date));
-
-            setStatus('active', 'तैयार');
-            showBanner('liveBanner', 'ok', `✅ पूरा हुआ — Processed: ${data.processed}, Skipped: ${data.skipped}, Errors: ${data.errors}`);
-        } catch (e) {
-            if (e.name === 'AbortError') {
-                showBanner('liveBanner', 'err', '⏹️ रोक दिया गया।');
-            } else {
-                showBanner('liveBanner', 'err', '❌ Network/Server error: ' + e.message);
+            const items = listData.items || [];
+            const total = items.length;
+            document.getElementById('remainingCount').textContent = total;
+            if (total === 0) {
+                showBanner('liveBanner', 'ok', 'ℹ️ No emails found in the selected folders/date range.');
+                setStatus('active', 'Ready');
+                return;
             }
-            setStatus('error', 'रुक गया');
+
+            setStatus('busy', `Processing 0/${total}...`);
+
+            for (let i = 0; i < items.length; i++) {
+                if (stopRequested) {
+                    showBanner('liveBanner', 'err', '⏹️ Stopped by user.');
+                    break;
+                }
+                const res = await fetch('/api/process-email', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ...cfg, folder: items[i].folder, uid: items[i].uid }),
+                });
+                const data = await safeJson(res);
+
+                if (data.ok) {
+                    if (data.status === 'processed') processed++;
+                    else if (data.status === 'skipped') skipped++;
+                    else errors++;
+                    if (data.log) addLogEntry(data.log.subject, data.log.from, data.log.company, data.log.amount, data.log.status, data.log.date);
+                } else {
+                    errors++;
+                    addLogEntry('-', '-', '-', '-', 'Error: ' + data.error, '-');
+                }
+
+                document.getElementById('processedCount').textContent = processed;
+                document.getElementById('skippedCount').textContent = skipped;
+                document.getElementById('errorCount').textContent = errors;
+                document.getElementById('remainingCount').textContent = total - (i + 1);
+                document.getElementById('progressBar').style.width = Math.round(((i + 1) / total) * 100) + '%';
+                setStatus('busy', `Processing ${i + 1}/${total}...`);
+
+                if ((i + 1) % 5 === 0 && i + 1 < items.length) {
+                    setStatus('busy', 'Pausing briefly to respect API rate limits...');
+                    await sleep(15000);
+                }
+            }
+
+            if (!stopRequested) {
+                setStatus('active', 'Ready');
+                showBanner('liveBanner', 'ok', `✅ Done — Processed: ${processed}, Skipped: ${skipped}, Errors: ${errors}`);
+            } else {
+                setStatus('error', 'Stopped');
+            }
+        } catch (e) {
+            showBanner('liveBanner', 'err', '❌ Network/Server error: ' + e.message);
+            setStatus('error', 'Stopped');
         } finally {
             isRunning = false;
             btn.disabled = false;
-            btn.textContent = '▶️ पाइपलाइन चलाएँ';
+            btn.textContent = '▶️ Run Pipeline';
         }
     }
 
     function stopPipeline() {
-        if (abortController) abortController.abort();
+        stopRequested = true;
     }
 
-    // ---------- शीट प्रीव्यू (असली Google Sheet डेटा) ----------
+    // ---------- Sheet Preview ----------
     async function renderSheetPreview() {
         hideBanner('sheetBanner');
         const container = document.getElementById('sheetPreview');
-        container.innerHTML = '<p style="padding:16px;color:#94a3b8;">लोड हो रहा है...</p>';
+        container.innerHTML = '<p style="padding:16px;color:#94a3b8;">Loading...</p>';
         try {
             const res = await fetch('/api/sheet-data', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(getFormSettings()),
+                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(getFormSettings()),
             });
-            const data = await res.json();
+            const data = await safeJson(res);
             if (!data.ok) {
                 container.innerHTML = '';
                 showBanner('sheetBanner', 'err', '❌ ' + data.error);
@@ -449,13 +557,11 @@
             }
             lastSheetData = data;
             if (!data.headers.length) {
-                container.innerHTML = '<p style="padding:16px;color:#94a3b8;">शीट खाली है।</p>';
+                container.innerHTML = '<p style="padding:16px;color:#94a3b8;">The sheet is empty.</p>';
                 return;
             }
             let html = '<table><thead><tr>' + data.headers.map(h => `<th>${escapeHtml(h)}</th>`).join('') + '</tr></thead><tbody>';
-            data.rows.forEach(row => {
-                html += '<tr>' + row.map(c => `<td>${escapeHtml(c)}</td>`).join('') + '</tr>';
-            });
+            data.rows.forEach(row => { html += '<tr>' + row.map(c => `<td>${escapeHtml(c)}</td>`).join('') + '</tr>'; });
             html += '</tbody></table>';
             container.innerHTML = html;
         } catch (e) {
@@ -464,49 +570,27 @@
         }
     }
 
-    function downloadCSV() {
-        if (!lastSheetData) { alert('पहले शीट प्रीव्यू लोड करें।'); return; }
-        const rows = [lastSheetData.headers, ...lastSheetData.rows];
-        const csv = rows.map(r => r.map(c => `"${String(c ?? '').replace(/"/g, '""')}"`).join(',')).join('\n');
-        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-        const link = document.createElement('a');
-        link.href = URL.createObjectURL(blob);
-        link.download = 'insurance_recovery_sheet.csv';
-        link.click();
+    function downloadExcel() {
+        if (!lastSheetData) { alert('Load the sheet preview first.'); return; }
+        const wsData = [lastSheetData.headers, ...lastSheetData.rows];
+        const ws = XLSX.utils.aoa_to_sheet(wsData);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
+        XLSX.writeFile(wb, 'insurance_recovery_sheet.xlsx');
     }
 
-    function downloadPDF() {
-        if (!lastSheetData) { alert('पहले शीट प्रीव्यू लोड करें।'); return; }
-        const { jsPDF } = window.jspdf;
-        const doc = new jsPDF({ orientation: 'landscape' });
-        doc.setFontSize(12);
-        doc.text('Insurance Recovery — Sheet Export', 14, 12);
-        let y = 22;
-        doc.setFontSize(8);
-        doc.text(lastSheetData.headers.join(' | '), 14, y);
-        y += 6;
-        lastSheetData.rows.forEach(row => {
-            if (y > 190) { doc.addPage(); y = 16; }
-            doc.text(row.join(' | ').slice(0, 180), 14, y);
-            y += 6;
-        });
-        doc.save('insurance_recovery_sheet.pdf');
-    }
-
-    // ---------- एनालिटिक्स (असली शीट डेटा से aggregate) ----------
+    // ---------- Analytics ----------
     let comparisonChart;
 
     async function loadAnalyticsData() {
         hideBanner('analyticsBanner');
-        if (!lastSheetData) {
-            await renderSheetPreview();
-        }
+        if (!lastSheetData) await renderSheetPreview();
         if (!lastSheetData || !lastSheetData.headers.length) {
-            showBanner('analyticsBanner', 'err', 'शीट में डेटा नहीं मिला।');
+            showBanner('analyticsBanner', 'err', 'No data found in the sheet.');
             return;
         }
-        // Sheet layout: A=Unit, B=Company, ... J=Deduction, K=Outstanding (0-indexed: 0,1,...9,10)
-        const agg = {}; // unit -> company -> {outstanding, deduction}
+        // Sheet layout: A=Unit(0), B=Company(1), ... J=Deduction(9), K=Outstanding(10)
+        const agg = {};
         const unitSet = new Set();
         lastSheetData.rows.forEach(row => {
             const unit = row[0] || 'Unknown';
@@ -525,7 +609,7 @@
         window._analyticsAgg = agg;
         const unitSelect = document.getElementById('unitFilter');
         const prevUnit = unitSelect.value;
-        unitSelect.innerHTML = '<option value="All">सभी</option>' + [...unitSet].map(u => `<option value="${escapeHtml(u)}">${escapeHtml(u)}</option>`).join('');
+        unitSelect.innerHTML = '<option value="All">All</option>' + [...unitSet].map(u => `<option value="${escapeHtml(u)}">${escapeHtml(u)}</option>`).join('');
         unitSelect.value = [...unitSet].includes(prevUnit) ? prevUnit : 'All';
 
         applyFilters();
@@ -558,27 +642,39 @@
         const units = unit === 'All' ? Object.keys(agg) : [unit];
         const companies = new Set();
         units.forEach(u => { if (agg[u]) Object.keys(agg[u]).forEach(c => companies.add(c)); });
-        companySelect.innerHTML = '<option value="All">सभी</option>' + [...companies].map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
+        companySelect.innerHTML = '<option value="All">All</option>' + [...companies].map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
         companySelect.value = [...companies].includes(prev) ? prev : 'All';
     }
+
+    const SINGLE_SERIES_TYPES = ['pie', 'doughnut', 'polarArea'];
+    const PALETTE = ['#1b4a7a', '#2e86c1', '#3498db', '#5dade2', '#85c1e9', '#e67e22', '#f39c12', '#f1c40f', '#27ae60', '#8e44ad'];
 
     function renderComparisonChart(data, type) {
         const ctx = document.getElementById('comparisonChart').getContext('2d');
         if (comparisonChart) comparisonChart.destroy();
         const companies = Object.keys(data);
-        if (!companies.length) return;
+        const note = document.getElementById('analyticsChartNote');
+        if (!companies.length) { note.textContent = 'No data to display.'; return; }
+
         const outstanding = companies.map(c => data[c].outstanding);
         const deduction = companies.map(c => data[c].deduction);
+
+        let datasets;
+        if (SINGLE_SERIES_TYPES.includes(type)) {
+            note.textContent = 'This chart type shows Outstanding amounts only (single-series chart).';
+            datasets = [{ label: 'Outstanding', data: outstanding, backgroundColor: PALETTE }];
+        } else {
+            note.textContent = '';
+            datasets = [
+                { label: 'Outstanding', data: outstanding, backgroundColor: '#1b4a7a', borderColor: '#1b4a7a' },
+                { label: 'Deduction', data: deduction, backgroundColor: '#e67e22', borderColor: '#e67e22' },
+            ];
+        }
+
         comparisonChart = new Chart(ctx, {
             type: type,
-            data: {
-                labels: companies,
-                datasets: [
-                    { label: 'Outstanding', data: outstanding, backgroundColor: type === 'pie' ? ['#1b4a7a', '#2e86c1', '#3498db', '#5dade2', '#85c1e9'] : '#1b4a7a' },
-                    { label: 'Deduction', data: deduction, backgroundColor: type === 'pie' ? ['#e67e22', '#f39c12', '#f1c40f', '#f9e79f', '#fdebd0'] : '#e67e22' },
-                ],
-            },
-            options: { responsive: true },
+            data: { labels: companies, datasets },
+            options: { responsive: true, maintainAspectRatio: false },
         });
     }
 
@@ -589,7 +685,105 @@
         renderComparisonChart(data, type);
     }
 
-    // ---------- AI टूल्स (Gemini backed) ----------
+    // ---------- Custom Report (pivot-style) ----------
+    let reportChart;
+
+    async function loadReportColumns() {
+        hideBanner('reportBanner');
+        if (!lastSheetData) await renderSheetPreview();
+        if (!lastSheetData || !lastSheetData.headers.length) {
+            showBanner('reportBanner', 'err', 'No data found in the sheet.');
+            return;
+        }
+        const groupSel = document.getElementById('reportGroupBy');
+        const valueSel = document.getElementById('reportValueColumn');
+        const opts = lastSheetData.headers.map((h, idx) => `<option value="${idx}">${escapeHtml(h)}</option>`).join('');
+        groupSel.innerHTML = opts;
+        valueSel.innerHTML = opts;
+        // Sensible defaults: group by Company (index 1), value = Outstanding (index 10) if present
+        if (lastSheetData.headers.length > 1) groupSel.value = '1';
+        if (lastSheetData.headers.length > 10) valueSel.value = '10';
+        buildCustomReport();
+    }
+
+    function buildCustomReport() {
+        if (!lastSheetData || !lastSheetData.headers.length) return;
+        const groupIdx = parseInt(document.getElementById('reportGroupBy').value, 10);
+        const valueIdx = parseInt(document.getElementById('reportValueColumn').value, 10);
+        const agg = document.getElementById('reportAggregation').value;
+        if (isNaN(groupIdx)) return;
+
+        const groupLabel = lastSheetData.headers[groupIdx] || 'Group';
+        const valueLabel = lastSheetData.headers[valueIdx] || 'Value';
+        const aggLabel = agg.charAt(0).toUpperCase() + agg.slice(1);
+        const resultColName = `${aggLabel} of ${valueLabel}`;
+
+        const groups = {};
+        lastSheetData.rows.forEach(row => {
+            const key = row[groupIdx] || 'Unknown';
+            const raw = valueIdx >= 0 ? (row[valueIdx] || '') : '';
+            const num = parseFloat(raw.toString().replace(/[^\d.-]/g, '')) || 0;
+            if (!groups[key]) groups[key] = { sum: 0, count: 0 };
+            groups[key].sum += num;
+            groups[key].count += 1;
+        });
+
+        currentReportRows = Object.keys(groups).map(k => {
+            let value;
+            if (agg === 'sum') value = groups[k].sum;
+            else if (agg === 'count') value = groups[k].count;
+            else value = groups[k].count ? groups[k].sum / groups[k].count : 0;
+            const rowObj = {};
+            rowObj[groupLabel] = k;
+            rowObj[resultColName] = Math.round(value * 100) / 100;
+            return rowObj;
+        });
+
+        renderReportTable(groupLabel, resultColName);
+        renderReportChart(groupLabel, resultColName);
+    }
+
+    function renderReportTable(groupLabel, resultColName) {
+        const container = document.getElementById('reportTable');
+        if (!currentReportRows || !currentReportRows.length) {
+            container.innerHTML = '<p style="padding:16px;color:#94a3b8;">No data yet.</p>';
+            return;
+        }
+        let html = `<table><thead><tr><th>${escapeHtml(groupLabel)}</th><th>${escapeHtml(resultColName)}</th></tr></thead><tbody>`;
+        currentReportRows.forEach(r => {
+            html += `<tr><td>${escapeHtml(r[groupLabel])}</td><td>${escapeHtml(r[resultColName])}</td></tr>`;
+        });
+        html += '</tbody></table>';
+        container.innerHTML = html;
+    }
+
+    function renderReportChart(groupLabel, resultColName) {
+        const ctx = document.getElementById('reportChart').getContext('2d');
+        if (reportChart) reportChart.destroy();
+        if (!currentReportRows || !currentReportRows.length) return;
+        const type = document.getElementById('reportChartType').value;
+        const labels = currentReportRows.map(r => r[groupLabel]);
+        const values = currentReportRows.map(r => r[resultColName]);
+
+        reportChart = new Chart(ctx, {
+            type: type,
+            data: {
+                labels,
+                datasets: [{ label: resultColName, data: values, backgroundColor: PALETTE, borderColor: '#1b4a7a' }],
+            },
+            options: { responsive: true, maintainAspectRatio: false },
+        });
+    }
+
+    function exportReportToExcel() {
+        if (!currentReportRows || !currentReportRows.length) { alert('Build a report first.'); return; }
+        const ws = XLSX.utils.json_to_sheet(currentReportRows);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, 'Report');
+        XLSX.writeFile(wb, 'custom_report.xlsx');
+    }
+
+    // ---------- AI-Robo (Q&A only, restricted to this tool's sheet data) ----------
     function appendChat(cls, text) {
         const box = document.getElementById('chatBox');
         const div = document.createElement('div');
@@ -599,49 +793,27 @@
         box.scrollTop = box.scrollHeight;
     }
 
-    async function callAi(prompt) {
-        const res = await fetch('/api/ai-chat', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ apiKey: document.getElementById('apiKey').value, model: document.getElementById('geminiModel').value, prompt }),
-        });
-        return res.json();
-    }
-
     async function sendChat() {
         const input = document.getElementById('chatInput');
         const text = input.value.trim();
         if (!text) return;
         appendChat('me', text);
         input.value = '';
-        appendChat('bot', '...सोच रहा हूँ');
-        const data = await callAi(text);
+        appendChat('bot', 'Thinking...');
+        const cfg = getFormSettings();
+        const res = await fetch('/api/ai-chat', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ...cfg, prompt: text }),
+        });
+        const data = await safeJson(res);
         const box = document.getElementById('chatBox');
         box.lastChild.remove();
         appendChat('bot', data.ok ? data.reply : ('❌ ' + data.error));
     }
 
-    async function generateReply() {
-        const company = document.getElementById('replyCompany').value || 'Insurance Company';
-        const amount = document.getElementById('replyAmount').value || '0';
-        const out = document.getElementById('replyOutput');
-        out.value = 'draft ban raha hai...';
-        const data = await callAi(`Hospital insurance recovery ke liye ek short, professional follow-up email likho — company: "${company}", outstanding amount: ₹${amount}. English me likho, polite lekin firm tone me.`);
-        out.value = data.ok ? data.reply : ('Error: ' + data.error);
-    }
-
-    async function analyzePriority() {
-        const company = document.getElementById('replyCompany').value || 'Insurance Company';
-        const amount = document.getElementById('replyAmount').value || '0';
-        const result = document.getElementById('priorityResult');
-        result.textContent = 'सोच रहा हूँ...';
-        const data = await callAi(`Company: "${company}", pending amount: ₹${amount}. Insurance recovery follow-up ke liye priority batao — High, Medium ya Low — sirf ek word aur ek chhoti si wajah (max 15 words) do.`);
-        result.textContent = data.ok ? ('🧠 ' + data.reply) : ('Error: ' + data.error);
-    }
-
     document.getElementById('chatInput').addEventListener('keydown', e => { if (e.key === 'Enter') sendChat(); });
 
-    // पेज लोड
+    // Page load
     loadSettings();
 </script>
 </body>
