@@ -1119,7 +1119,7 @@ def _process_one_email_core(cfg: dict, folder: str, uid: str) -> dict:
 
 
 LOG_SHEET_NAME = "Sheet2"
-LOG_HEADER_ROW = ["Timestamp", "Subject", "From", "Company", "Amount", "Status", "Date"]
+LOG_HEADER_ROW = ["Timestamp", "Subject", "From", "Company", "Amount", "Status", "Date", "Folder", "UID"]
 
 
 def _get_or_create_log_sheet(sheet_url: str):
@@ -1129,6 +1129,14 @@ def _get_or_create_log_sheet(sheet_url: str):
     sh = gc.open_by_key(sheet_id)
     try:
         ws2 = sh.worksheet(LOG_SHEET_NAME)
+        # Older Sheet2 tabs created before Folder/UID existed only have 7
+        # header columns — top them up so the new columns line up correctly.
+        try:
+            existing_header = ws2.row_values(1)
+            if len(existing_header) < len(LOG_HEADER_ROW):
+                ws2.update(values=[LOG_HEADER_ROW], range_name="A1", value_input_option="USER_ENTERED")
+        except Exception:
+            pass
     except Exception:
         ws2 = sh.add_worksheet(title=LOG_SHEET_NAME, rows=2000, cols=10)
         ws2.update(values=[LOG_HEADER_ROW], range_name="A1", value_input_option="USER_ENTERED")
@@ -1151,6 +1159,8 @@ def _append_log_to_sheet2(sheet_url: str, log_entry: dict):
             str(log_entry.get("amount", "")),
             log_entry.get("status", ""),
             log_entry.get("date", ""),
+            log_entry.get("folder", ""),
+            log_entry.get("uid", ""),
         ]
         ws2.append_row(row, value_input_option="USER_ENTERED")
     except Exception as e:
@@ -1159,8 +1169,12 @@ def _append_log_to_sheet2(sheet_url: str, log_entry: dict):
 
 def process_one_email(cfg: dict, folder: str, uid: str) -> dict:
     """Wrapper: asli processing (_process_one_email_core, bilkul unchanged) chalata hai,
-    fir uska result Sheet2 me bhi audit-log kar deta hai."""
+    fir uska result Sheet2 me bhi audit-log kar deta hai (folder/uid ke saath, taaki
+    baad me is exact mail ko dobara khol sakein)."""
     result = _process_one_email_core(cfg, folder, uid)
+    if isinstance(result, dict) and isinstance(result.get("log"), dict):
+        result["log"]["folder"] = folder
+        result["log"]["uid"] = uid
     try:
         _append_log_to_sheet2(cfg.get("sheetUrl", ""), result.get("log", {}))
     except Exception as e:
@@ -1222,6 +1236,72 @@ def api_process_email():
     try:
         result = process_one_email(cfg, folder, uid)
         return jsonify({"ok": True, **result})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 200
+
+
+@app.route("/api/log-history", methods=["POST"])
+def api_log_history():
+    """Sheet2 ka audit log wapas padhta hai — Folder/UID samet — taaki page refresh
+    ke baad bhi Live Monitor table dobara bhara ja sake aur purani mails ka Open
+    button kaam kare."""
+    body = request.get_json(force=True, silent=True) or {}
+    cfg = cfg_from_request(body)
+    try:
+        ws2 = _get_or_create_log_sheet(cfg["sheetUrl"])
+        values = ws2.get_all_values()
+        if len(values) <= 1:
+            return jsonify({"ok": True, "items": []})
+        items = []
+        for r in values[1:]:
+            r = r + [""] * (len(LOG_HEADER_ROW) - len(r))  # pad older/shorter rows
+            items.append({
+                "timestamp": r[0], "subject": r[1], "from": r[2], "company": r[3],
+                "amount": r[4], "status": r[5], "date": r[6], "folder": r[7], "uid": r[8],
+            })
+        items.reverse()  # most recent first, same order the live table uses
+        return jsonify({"ok": True, "items": items})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 200
+
+
+@app.route("/api/email-preview", methods=["POST"])
+def api_email_preview():
+    """Read-only: re-fetches ONE mail by folder+uid and returns its full content so the
+    frontend can show it in a Gmail/Outlook-style reading pane. Does not touch the
+    Sheet, does not run the AI extraction — purely for the user to inspect why a mail
+    was processed/skipped the way it was. Reuses the exact same IMAP + parsing helpers
+    as the pipeline (imap_login, select_folder, save_email_to_disk_by_uid, read_eml,
+    get_to_cc) so the content shown is guaranteed to match what the pipeline itself saw."""
+    body = request.get_json(force=True, silent=True) or {}
+    cfg = cfg_from_request(body)
+    folder = body.get("folder", "")
+    uid = body.get("uid", "")
+    if not folder or not uid:
+        return jsonify({"ok": False, "error": "folder/uid missing"}), 200
+    try:
+        imap = imap_login(cfg)
+        try:
+            if not select_folder(imap, folder):
+                return jsonify({"ok": False, "error": f"Folder select failed: {folder}"}), 200
+            file_path = save_email_to_disk_by_uid(imap, uid)
+            meta = read_eml(file_path)
+            to_field, cc_field = get_to_cc(file_path)
+        finally:
+            try:
+                imap.logout()
+            except Exception:
+                pass
+        return jsonify({
+            "ok": True,
+            "subject": meta["subject"],
+            "from": meta["from"],
+            "to": to_field,
+            "cc": cc_field,
+            "date": meta["date_str"],
+            "html": meta.get("html_raw", ""),
+            "text": meta.get("plain_text", ""),
+        })
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 200
 
