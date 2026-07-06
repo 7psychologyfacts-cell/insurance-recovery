@@ -72,7 +72,7 @@
 
         .robot-btn { position:fixed; bottom:30px; right:30px; width:65px; height:65px; background: #ff6f61; border-radius:50%; box-shadow:0 8px 20px rgba(0,0,0,0.2); cursor:pointer; display:flex; align-items:center; justify-content:center; font-size:2.2rem; z-index:999; transition:0.3s; border: none; }
         .robot-btn:hover { transform:scale(1.1); }
-        .robot-popup { position:fixed; bottom:110px; right:30px; width:380px; height:520px; background:white; border-radius:20px; box-shadow:0 20px 50px rgba(0,0,0,0.2); z-index:1000; display:none; flex-direction:column; overflow:auto; border:2px solid #ff6f61; resize:both; min-width:300px; min-height:340px; max-width:90vw; max-height:85vh; }
+        .robot-popup { position:fixed; bottom:110px; right:30px; width:380px; height:520px; background:white; border-radius:20px; box-shadow:0 20px 50px rgba(0,0,0,0.2); z-index:1000; display:none; flex-direction:column; overflow:hidden; border:2px solid #ff6f61; min-width:300px; min-height:340px; max-width:90vw; max-height:85vh; }
         .robot-popup.active { display:flex; }
 
         /* ---- Email preview modal (Live Monitor "Open" button) ---- */
@@ -100,8 +100,47 @@
         .chart-row { display:flex; gap:20px; flex-wrap:wrap; }
         .chart-box { flex:1; min-width:300px; background:#f8fafd; border-radius:14px; padding:20px; border:1px solid #e9edf4; margin-bottom:20px; }
         .report-grid { display:grid; grid-template-columns: 340px 1fr; gap:24px; align-items:start; }
+        .report-grid > * { min-width:0; }
         @media (max-width:900px) { .report-grid { grid-template-columns: 1fr; } }
         @media (max-width:600px) { .header h1 { font-size:1.3rem; } .config-grid { grid-template-columns:1fr; } }
+
+        /* ---- Fix: canvas/table blow-out inside grid & flex containers ---- */
+        .chart-row, .chart-box, .chart-canvas-wrap, .sheet-preview, .heatmap-wrap { min-width:0; }
+        .chart-canvas-wrap canvas { max-width:100%; }
+        .tab-content { overflow-x:auto; }
+
+        /* ---- Excel-style Pivot builder (Custom Report tab) ---- */
+        .pivot-fieldlist { display:flex; flex-wrap:wrap; gap:6px; padding:10px; border:1px dashed #cbd5e1; border-radius:8px; min-height:44px; background:#ffffff; }
+        .pivot-field-pill { background:#eef2f6; border:1px solid #dce3eb; padding:6px 10px; border-radius:6px; font-size:0.82rem; cursor:grab; user-select:none; }
+        .pivot-field-pill:hover { border-color:#1b4a7a; }
+        .pivot-field-pill.used { opacity:0.45; background:#e2e8f0; }
+        .pivot-field-pill:active { cursor:grabbing; }
+        .pivot-zones { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin:14px 0; }
+        .pivot-zone { background:#f8fafd; border:1px solid #e9edf4; border-radius:10px; padding:8px; min-width:0; }
+        .pivot-zone-title { font-size:0.74rem; font-weight:700; color:#64748b; margin-bottom:6px; text-transform:uppercase; letter-spacing:0.4px; }
+        .pivot-zone-drop { min-height:40px; display:flex; flex-direction:column; gap:6px; border-radius:6px; transition:background 0.15s; padding:2px; }
+        .pivot-zone-drop.drag-over { background:#e6f0ff; outline:2px dashed #1b4a7a; outline-offset:-2px; }
+        .pivot-zone-placeholder { font-size:0.74rem; color:#94a3b8; padding:6px 4px; }
+        .pivot-chip { background:#1b4a7a; color:#fff; padding:6px 8px; border-radius:6px; font-size:0.8rem; display:flex; align-items:center; justify-content:space-between; gap:6px; cursor:grab; }
+        .pivot-chip:active { cursor:grabbing; }
+        .pivot-chip .pivot-chip-remove { cursor:pointer; opacity:0.85; font-weight:700; padding:0 2px; }
+        .pivot-chip .pivot-chip-remove:hover { opacity:1; }
+        .pivot-filter-chip { display:flex; flex-direction:column; background:#1b4a7a; border-radius:6px; padding:6px 8px; gap:4px; cursor:grab; }
+        .pivot-filter-chip:active { cursor:grabbing; }
+        .pivot-filter-chip .pivot-chip-head { display:flex; justify-content:space-between; align-items:center; color:#fff; font-size:0.8rem; gap:6px; }
+        .pivot-filter-chip .pivot-filter-value { width:100%; font-size:0.75rem; padding:3px 4px; border-radius:4px; border:none; color:#0f2b4b; }
+        @media (max-width:520px) { .pivot-zones { grid-template-columns:1fr; } }
+
+        /* ---- AI-Robo: custom multi-edge resize handles ---- */
+        .resize-handle { position:absolute; z-index:20; }
+        .resize-handle.dir-n { top:-4px; left:12px; right:12px; height:8px; cursor:ns-resize; }
+        .resize-handle.dir-s { bottom:-4px; left:12px; right:12px; height:8px; cursor:ns-resize; }
+        .resize-handle.dir-e { top:12px; bottom:12px; right:-4px; width:8px; cursor:ew-resize; }
+        .resize-handle.dir-w { top:12px; bottom:12px; left:-4px; width:8px; cursor:ew-resize; }
+        .resize-handle.dir-ne { top:-5px; right:-5px; width:16px; height:16px; cursor:nesw-resize; }
+        .resize-handle.dir-nw { top:-5px; left:-5px; width:16px; height:16px; cursor:nwse-resize; }
+        .resize-handle.dir-se { bottom:-5px; right:-5px; width:16px; height:16px; cursor:nwse-resize; }
+        .resize-handle.dir-sw { bottom:-5px; left:-5px; width:16px; height:16px; cursor:nesw-resize; }
     </style>
 </head>
 <body>
@@ -194,7 +233,7 @@
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; flex-wrap:wrap; gap:10px;">
             <h3>📋 Google Sheet Data Preview</h3>
             <div>
-                <button class="btn btn-outline" onclick="renderSheetPreview()">🔄 Refresh</button>
+                <button class="btn btn-outline" onclick="invalidateDerivedTabs(); renderSheetPreview()">🔄 Refresh</button>
                 <button class="btn btn-outline" onclick="downloadExcel()">📊 Export to Excel</button>
             </div>
         </div>
@@ -256,12 +295,26 @@
             <div class="card">
                 <h3>🧮 Build Report</h3>
                 <div class="form-group">
-                    <label>Group By Column(s) — pick one or more</label>
-                    <div class="checkbox-group" id="reportGroupByBox"></div>
+                    <label>Fields <small style="font-weight:400;color:#94a3b8;">— click to auto-place, or drag into a zone below</small></label>
+                    <div class="pivot-fieldlist" id="pivotFieldList"></div>
                 </div>
-                <div class="form-group">
-                    <label>Value Column(s) — pick one or more</label>
-                    <div class="checkbox-group" id="reportValueBox"></div>
+                <div class="pivot-zones">
+                    <div class="pivot-zone">
+                        <div class="pivot-zone-title">🔻 Filters</div>
+                        <div class="pivot-zone-drop" id="zoneFilters" data-zone="filters"></div>
+                    </div>
+                    <div class="pivot-zone">
+                        <div class="pivot-zone-title">↔️ Columns</div>
+                        <div class="pivot-zone-drop" id="zoneColumns" data-zone="columns"></div>
+                    </div>
+                    <div class="pivot-zone">
+                        <div class="pivot-zone-title">☰ Rows</div>
+                        <div class="pivot-zone-drop" id="zoneRows" data-zone="rows"></div>
+                    </div>
+                    <div class="pivot-zone">
+                        <div class="pivot-zone-title">Σ Values</div>
+                        <div class="pivot-zone-drop" id="zoneValues" data-zone="values"></div>
+                    </div>
                 </div>
                 <div class="form-group"><label>Aggregation</label>
                     <select id="reportAggregation" onchange="buildCustomReport()">
@@ -316,6 +369,14 @@
 <!-- FLOATING AI-ROBO BUTTON -->
 <button class="robot-btn" id="robotButton" onclick="toggleRobot()">🤖</button>
 <div class="robot-popup" id="robotPopup">
+    <div class="resize-handle dir-n" data-dir="n"></div>
+    <div class="resize-handle dir-s" data-dir="s"></div>
+    <div class="resize-handle dir-e" data-dir="e"></div>
+    <div class="resize-handle dir-w" data-dir="w"></div>
+    <div class="resize-handle dir-ne" data-dir="ne"></div>
+    <div class="resize-handle dir-nw" data-dir="nw"></div>
+    <div class="resize-handle dir-se" data-dir="se"></div>
+    <div class="resize-handle dir-sw" data-dir="sw"></div>
     <div class="robot-header">
         <span>🤖 AI-Robo</span>
         <button class="close-btn" onclick="toggleRobot()">✕</button>
@@ -464,6 +525,8 @@
     }
 
     // Tab switching
+    let analyticsLoaded = false;
+    let reportLoaded = false;
     document.querySelectorAll('.tab').forEach(tab => {
         tab.addEventListener('click', () => {
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
@@ -471,14 +534,66 @@
             tab.classList.add('active');
             document.getElementById(tab.dataset.tab).classList.add('active');
             if (tab.dataset.tab === 'sheet' && !lastSheetData) renderSheetPreview();
-            if (tab.dataset.tab === 'analytics' && !lastSheetData) loadAnalyticsData();
-            if (tab.dataset.tab === 'report' && !lastSheetData) loadReportColumns();
+            if (tab.dataset.tab === 'analytics' && !analyticsLoaded) loadAnalyticsData();
+            if (tab.dataset.tab === 'report' && !reportLoaded) loadReportColumns();
+            setTimeout(() => {
+                if (comparisonChart) comparisonChart.resize();
+                if (reportChart) reportChart.resize();
+            }, 50);
         });
+    });
+
+    function invalidateDerivedTabs() {
+        analyticsLoaded = false;
+        reportLoaded = false;
+    }
+
+    window.addEventListener('resize', () => {
+        if (comparisonChart) comparisonChart.resize();
+        if (reportChart) reportChart.resize();
     });
 
     function toggleRobot() {
         document.getElementById('robotPopup').classList.toggle('active');
     }
+
+    (function initRobotResize() {
+        const popup = document.getElementById('robotPopup');
+        if (!popup) return;
+        const MIN_W = 300, MIN_H = 340;
+        popup.querySelectorAll('.resize-handle').forEach(handle => {
+            const dir = handle.dataset.dir;
+            const onDown = startEvt => {
+                startEvt.preventDefault();
+                const point = startEvt.touches ? startEvt.touches[0] : startEvt;
+                const startX = point.clientX, startY = point.clientY;
+                const startW = popup.offsetWidth, startH = popup.offsetHeight;
+                const maxW = window.innerWidth * 0.9, maxH = window.innerHeight * 0.85;
+                const onMove = moveEvt => {
+                    const p = moveEvt.touches ? moveEvt.touches[0] : moveEvt;
+                    let w = startW, h = startH;
+                    if (dir.includes('e')) w = startW + (p.clientX - startX);
+                    if (dir.includes('w')) w = startW - (p.clientX - startX);
+                    if (dir.includes('s')) h = startH + (p.clientY - startY);
+                    if (dir.includes('n')) h = startH - (p.clientY - startY);
+                    popup.style.width = Math.min(Math.max(w, MIN_W), maxW) + 'px';
+                    popup.style.height = Math.min(Math.max(h, MIN_H), maxH) + 'px';
+                };
+                const onUp = () => {
+                    document.removeEventListener('mousemove', onMove);
+                    document.removeEventListener('mouseup', onUp);
+                    document.removeEventListener('touchmove', onMove);
+                    document.removeEventListener('touchend', onUp);
+                };
+                document.addEventListener('mousemove', onMove);
+                document.addEventListener('mouseup', onUp);
+                document.addEventListener('touchmove', onMove, { passive: false });
+                document.addEventListener('touchend', onUp);
+            };
+            handle.addEventListener('mousedown', onDown);
+            handle.addEventListener('touchstart', onDown, { passive: false });
+        });
+    })();
 
     // ---------- Pipeline: list all pending mails, then process one at a time ----------
     let isRunning = false;
@@ -802,6 +917,7 @@
     }
 
     async function loadAnalyticsData() {
+        analyticsLoaded = true;
         hideBanner('analyticsBanner');
         if (!lastSheetData) await renderSheetPreview();
         if (!lastSheetData || !lastSheetData.headers.length) {
@@ -950,35 +1066,154 @@
         renderComparisonChart(data, type);
     }
 
-    // ---------- Custom Report (pivot-style) ----------
+    // ---------- Custom Report (Excel-style Pivot Table) ----------
     let reportChart;
     let currentReportColumns = []; // ordered list of column names in currentReportRows, for table/export
+    let pivotHeaders = [];
+    let pivotState = { filters: [], columns: [], rows: [], values: [] }; // filters: [{idx, value}], others: [idx,...]
 
     async function loadReportColumns() {
+        reportLoaded = true;
         hideBanner('reportBanner');
         if (!lastSheetData) await renderSheetPreview();
         if (!lastSheetData || !lastSheetData.headers.length) {
             showBanner('reportBanner', 'err', 'No data found in the sheet.');
             return;
         }
-        const groupBox = document.getElementById('reportGroupByBox');
-        const valueBox = document.getElementById('reportValueBox');
+        pivotHeaders = lastSheetData.headers;
+        // Sensible defaults, same spirit as before: Rows=Company(1), Values=Outstanding(10)/Deduction(9)
+        pivotState = { filters: [], columns: [], rows: [], values: [] };
+        if (pivotHeaders[1] !== undefined) pivotState.rows.push(1);
+        if (pivotHeaders[10] !== undefined) pivotState.values.push(10);
+        else if (pivotHeaders[9] !== undefined) pivotState.values.push(9);
 
-        // Sensible defaults: group by Company (index 1); value = Outstanding (10) if present, else Deduction (9)
-        groupBox.innerHTML = lastSheetData.headers.map((h, idx) => {
-            const checked = idx === 1 ? 'checked' : '';
-            return `<label class="checkbox-item"><input type="checkbox" class="report-group-cb" value="${idx}" ${checked} onchange="buildCustomReport()"> ${escapeHtml(h)}</label>`;
-        }).join('');
-        valueBox.innerHTML = lastSheetData.headers.map((h, idx) => {
-            const checked = (idx === 10 || idx === 9) ? 'checked' : '';
-            return `<label class="checkbox-item"><input type="checkbox" class="report-value-cb" value="${idx}" ${checked} onchange="buildCustomReport()"> ${escapeHtml(h)}</label>`;
-        }).join('');
-
+        renderPivotBuilder();
         buildCustomReport();
     }
 
-    function getCheckedIdxs(selector) {
-        return Array.from(document.querySelectorAll(selector + ':checked')).map(cb => parseInt(cb.value, 10));
+    function isFieldUsed(idx) {
+        return pivotState.filters.some(f => f.idx === idx) || pivotState.columns.includes(idx) ||
+               pivotState.rows.includes(idx) || pivotState.values.includes(idx);
+    }
+
+    // Peeks at up to 25 sample rows to guess whether a column is numeric, so a
+    // plain click on a field can auto-place it in Values vs Rows — same as
+    // Excel's checkbox behaviour before you ever touch drag-and-drop.
+    function isNumericColumn(idx) {
+        if (!lastSheetData) return false;
+        let numeric = 0, total = 0;
+        for (const row of lastSheetData.rows.slice(0, 25)) {
+            const v = row[idx];
+            if (v === undefined || v === '') continue;
+            total++;
+            if (/\d/.test(v.toString()) && !isNaN(parseFloat(v.toString().replace(/[^\d.-]/g, '')))) numeric++;
+        }
+        return total > 0 && numeric / total > 0.7;
+    }
+
+    function getDistinctValues(idx) {
+        if (!lastSheetData) return [];
+        const set = new Set();
+        lastSheetData.rows.forEach(r => set.add((r[idx] ?? 'Unknown').toString()));
+        return [...set].sort();
+    }
+
+    function quickAddField(idx) {
+        if (isFieldUsed(idx)) { removeField(idx); return; }
+        pivotState[isNumericColumn(idx) ? 'values' : 'rows'].push(idx);
+        renderPivotBuilder();
+        buildCustomReport();
+    }
+
+    function removeField(idx) {
+        pivotState.filters = pivotState.filters.filter(f => f.idx !== idx);
+        pivotState.columns = pivotState.columns.filter(i => i !== idx);
+        pivotState.rows = pivotState.rows.filter(i => i !== idx);
+        pivotState.values = pivotState.values.filter(i => i !== idx);
+        renderPivotBuilder();
+        buildCustomReport();
+    }
+
+    function moveFieldToZone(idx, targetZone) {
+        pivotState.filters = pivotState.filters.filter(f => f.idx !== idx);
+        pivotState.columns = pivotState.columns.filter(i => i !== idx);
+        pivotState.rows = pivotState.rows.filter(i => i !== idx);
+        pivotState.values = pivotState.values.filter(i => i !== idx);
+        if (targetZone === 'filters') pivotState.filters.push({ idx, value: 'All' });
+        else pivotState[targetZone].push(idx);
+        renderPivotBuilder();
+        buildCustomReport();
+    }
+
+    function setFilterValue(idx, value) {
+        const f = pivotState.filters.find(f => f.idx === idx);
+        if (f) f.value = value;
+        buildCustomReport();
+    }
+
+    function placeholderHtml(text) {
+        return `<div class="pivot-zone-placeholder">${text}</div>`;
+    }
+
+    function renderZone(containerId, zoneName) {
+        const container = document.getElementById(containerId);
+        if (zoneName === 'filters') {
+            container.innerHTML = pivotState.filters.map(f => {
+                const options = ['All', ...getDistinctValues(f.idx)]
+                    .map(v => `<option value="${escapeHtml(v)}" ${f.value === v ? 'selected' : ''}>${escapeHtml(v)}</option>`).join('');
+                return `<div class="pivot-filter-chip" draggable="true" data-idx="${f.idx}">
+                    <div class="pivot-chip-head"><span>${escapeHtml(pivotHeaders[f.idx])}</span><span class="pivot-chip-remove" onclick="removeField(${f.idx})">✕</span></div>
+                    <select class="pivot-filter-value" onchange="setFilterValue(${f.idx}, this.value)">${options}</select>
+                </div>`;
+            }).join('') || placeholderHtml('Drag a field here to filter');
+        } else {
+            const arr = pivotState[zoneName];
+            container.innerHTML = arr.map(idx => `
+                <div class="pivot-chip" draggable="true" data-idx="${idx}">
+                    <span>${escapeHtml(pivotHeaders[idx])}</span><span class="pivot-chip-remove" onclick="removeField(${idx})">✕</span>
+                </div>`).join('') || placeholderHtml('Drag a field here');
+        }
+    }
+
+    function renderPivotBuilder() {
+        const usedIdxs = new Set([...pivotState.filters.map(f => f.idx), ...pivotState.columns, ...pivotState.rows, ...pivotState.values]);
+        const list = document.getElementById('pivotFieldList');
+        list.innerHTML = pivotHeaders.map((h, idx) => `
+            <div class="pivot-field-pill${usedIdxs.has(idx) ? ' used' : ''}" draggable="true" data-idx="${idx}" onclick="quickAddField(${idx})">${escapeHtml(h)}</div>
+        `).join('');
+
+        renderZone('zoneFilters', 'filters');
+        renderZone('zoneColumns', 'columns');
+        renderZone('zoneRows', 'rows');
+        renderZone('zoneValues', 'values');
+
+        attachPivotDragHandlers();
+    }
+
+    function attachPivotDragHandlers() {
+        document.querySelectorAll('#pivotFieldList [draggable="true"], .pivot-zone-drop [draggable="true"]').forEach(el => {
+            el.addEventListener('dragstart', e => {
+                e.dataTransfer.setData('text/plain', el.dataset.idx);
+                e.dataTransfer.effectAllowed = 'move';
+            });
+        });
+        document.querySelectorAll('.pivot-zone-drop').forEach(zone => {
+            zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag-over'); });
+            zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
+            zone.addEventListener('drop', e => {
+                e.preventDefault();
+                zone.classList.remove('drag-over');
+                const idx = parseInt(e.dataTransfer.getData('text/plain'), 10);
+                if (!isNaN(idx)) moveFieldToZone(idx, zone.dataset.zone);
+            });
+        });
+        const list = document.getElementById('pivotFieldList');
+        list.addEventListener('dragover', e => e.preventDefault());
+        list.addEventListener('drop', e => {
+            e.preventDefault();
+            const idx = parseInt(e.dataTransfer.getData('text/plain'), 10);
+            if (!isNaN(idx)) removeField(idx);
+        });
     }
 
     function aggregate(nums, agg) {
@@ -991,33 +1226,20 @@
         return 0;
     }
 
-    function buildCustomReport() {
-        if (!lastSheetData || !lastSheetData.headers.length) return;
-        hideBanner('reportBanner');
-        const groupIdxs = getCheckedIdxs('.report-group-cb');
-        const valueIdxs = getCheckedIdxs('.report-value-cb');
-        const agg = document.getElementById('reportAggregation').value;
-        const chartType = document.getElementById('reportChartType').value;
-        const headers = lastSheetData.headers;
-
-        if (!groupIdxs.length) {
-            showBanner('reportBanner', 'err', 'Select at least one Group By column.');
-            currentReportRows = null;
-            renderReportTable([], []);
-            renderReportChart([], [], chartType);
-            return;
-        }
-
-        const groupLabel = groupIdxs.map(i => headers[i]).join(' + ');
+    // Groups rows purely by groupIdxs — same shape the old "Group By" checkbox
+    // report used. Powers the chart (always) and the Report Table when no
+    // Columns field is in play.
+    function computeFlatGroups(rows, groupIdxs, valueIdxs, agg, headers) {
+        const groupLabel = groupIdxs.length ? groupIdxs.map(i => headers[i]).join(' + ') : '(All)';
         const aggLabel = agg.charAt(0).toUpperCase() + agg.slice(1);
         const valueColNames = valueIdxs.map(vi => `${aggLabel} of ${headers[vi]}`);
-
-        // Group rows by the composite key of all selected Group-By columns.
-        const groups = {}; // key -> { count, perValue: { valueIdx: [nums] } }
-        lastSheetData.rows.forEach(row => {
-            const key = groupIdxs.map(i => row[i] || 'Unknown').join(' | ');
+        const groups = {};
+        const order = [];
+        rows.forEach(row => {
+            const key = groupIdxs.length ? groupIdxs.map(i => row[i] || 'Unknown').join(' | ') : '(All)';
             if (!groups[key]) {
                 groups[key] = { count: 0, perValue: {} };
+                order.push(key);
                 valueIdxs.forEach(vi => { groups[key].perValue[vi] = []; });
             }
             groups[key].count += 1;
@@ -1027,23 +1249,133 @@
                 groups[key].perValue[vi].push(num);
             });
         });
-
-        currentReportColumns = [groupLabel, ...valueColNames];
-        currentReportRows = Object.keys(groups).map(key => {
-            const rowObj = {};
-            rowObj[groupLabel] = key;
-            valueIdxs.forEach((vi, idx) => {
-                const val = agg === 'count' ? groups[key].count : aggregate(groups[key].perValue[vi], agg);
-                rowObj[valueColNames[idx]] = Math.round(val * 100) / 100;
-            });
-            // If no value column chosen at all, still show row counts.
-            if (!valueIdxs.length) rowObj['Count'] = groups[key].count;
-            return rowObj;
+        const resultRows = order.map(key => {
+            const obj = { [groupLabel]: key };
+            if (valueIdxs.length) valueIdxs.forEach((vi, i) => { obj[valueColNames[i]] = Math.round(aggregate(groups[key].perValue[vi], agg) * 100) / 100; });
+            else obj['Count'] = groups[key].count;
+            return obj;
         });
-        if (!valueIdxs.length && !currentReportColumns.includes('Count')) currentReportColumns.push('Count');
+        return { groupLabel, valueColNames: valueColNames.length ? valueColNames : ['Count'], rows: resultRows };
+    }
 
-        renderReportTable(currentReportColumns, currentReportRows);
-        renderReportChart(groupLabel, valueColNames.length ? valueColNames : ['Count'], chartType, valueIdxs, groupIdxs, agg, headers);
+    function buildCustomReport() {
+        if (!lastSheetData || !lastSheetData.headers.length) return;
+        hideBanner('reportBanner');
+        const headers = lastSheetData.headers;
+        const agg = document.getElementById('reportAggregation').value;
+        const chartType = document.getElementById('reportChartType').value;
+        const rowIdxs = pivotState.rows;
+        const colIdxs = pivotState.columns;
+        const valueIdxs = pivotState.values;
+
+        if (!rowIdxs.length && !colIdxs.length) {
+            showBanner('reportBanner', 'err', 'Drag at least one field into Rows or Columns.');
+            currentReportRows = null;
+            currentReportColumns = [];
+            renderReportTable([], []);
+            renderReportChart('', [], chartType, [], [], agg, headers);
+            return;
+        }
+
+        // Apply the Filters zone (each filter field with a specific value picked, ANDed together).
+        let filteredRows = lastSheetData.rows;
+        pivotState.filters.forEach(f => {
+            if (f.value && f.value !== 'All') {
+                filteredRows = filteredRows.filter(r => (r[f.idx] ?? 'Unknown').toString() === f.value);
+            }
+        });
+
+        if (!colIdxs.length) {
+            // Plain grouped pivot: Rows + Values only (same look as before).
+            const flat = computeFlatGroups(filteredRows, rowIdxs, valueIdxs, agg, headers);
+            currentReportColumns = [flat.groupLabel, ...flat.valueColNames];
+            currentReportRows = flat.rows;
+            renderReportTable(currentReportColumns, currentReportRows);
+            renderReportChart(flat.groupLabel, flat.valueColNames, chartType, valueIdxs, rowIdxs, agg, headers);
+            return;
+        }
+
+        // Rows × Columns cross-tab — a real pivot table, just like Excel.
+        const rowLabel = rowIdxs.length ? rowIdxs.map(i => headers[i]).join(' + ') : '(All)';
+        const colLabel = colIdxs.map(i => headers[i]).join(' + ');
+        const aggLabel = agg.charAt(0).toUpperCase() + agg.slice(1);
+        const valueColNames = valueIdxs.map(vi => `${aggLabel} of ${headers[vi]}`);
+        const valueLabels = valueColNames.length ? valueColNames : ['Count'];
+
+        const rowKeyOrder = [];
+        const colKeySet = new Set();
+        const buckets = {};
+        filteredRows.forEach(row => {
+            const rk = rowIdxs.length ? rowIdxs.map(i => row[i] || 'Unknown').join(' | ') : '(All)';
+            const ck = colIdxs.map(i => row[i] || 'Unknown').join(' | ');
+            if (!rowKeyOrder.includes(rk)) rowKeyOrder.push(rk);
+            colKeySet.add(ck);
+            const bucketKey = rk + '||' + ck;
+            if (!buckets[bucketKey]) { buckets[bucketKey] = { count: 0, perValue: {} }; valueIdxs.forEach(vi => { buckets[bucketKey].perValue[vi] = []; }); }
+            buckets[bucketKey].count += 1;
+            valueIdxs.forEach(vi => {
+                const raw = row[vi] || '';
+                const num = parseFloat(raw.toString().replace(/[^\d.-]/g, '')) || 0;
+                buckets[bucketKey].perValue[vi].push(num);
+            });
+        });
+        const colKeys = [...colKeySet].sort();
+
+        function cellValue(rk, ck, vi) {
+            const b = buckets[rk + '||' + ck];
+            if (!b) return '';
+            if (!valueIdxs.length) return b.count;
+            return Math.round(aggregate(b.perValue[vi], agg) * 100) / 100;
+        }
+
+        currentReportColumns = [rowLabel];
+        colKeys.forEach(ck => valueLabels.forEach(vl => currentReportColumns.push(`${ck} — ${vl}`)));
+        currentReportRows = rowKeyOrder.map(rk => {
+            const obj = { [rowLabel]: rk };
+            colKeys.forEach(ck => {
+                if (valueIdxs.length) valueIdxs.forEach((vi, i) => { obj[`${ck} — ${valueColNames[i]}`] = cellValue(rk, ck, vi); });
+                else obj[`${ck} — Count`] = cellValue(rk, ck, null);
+            });
+            return obj;
+        });
+
+        renderPivotCrossTab('reportTable', rowLabel, colLabel, rowKeyOrder, colKeys, valueLabels, cellValue, valueIdxs.length ? valueIdxs : [null]);
+
+        // The chart keeps its original, simple behaviour untouched: it plots
+        // Rows vs Values (or, for the Heatmap type, Rows × Columns as its two
+        // axes) exactly like the old "Group By" checkboxes used to.
+        if (chartType === 'heatmap') {
+            const chartGroupIdxs = rowIdxs.length >= 2 ? rowIdxs : [...rowIdxs, ...colIdxs];
+            renderReportChart(chartGroupIdxs.map(i => headers[i]).join(' + '), valueLabels, chartType, valueIdxs, chartGroupIdxs, agg, headers);
+        } else {
+            const flat = computeFlatGroups(filteredRows, rowIdxs, valueIdxs, agg, headers);
+            renderReportChart(flat.groupLabel, flat.valueColNames, chartType, valueIdxs, rowIdxs, agg, headers);
+        }
+    }
+
+    function renderPivotCrossTab(containerId, rowLabel, colLabel, rowKeys, colKeys, valueLabels, cellValue, valueIdxs) {
+        const container = document.getElementById(containerId);
+        if (!rowKeys.length || !colKeys.length) {
+            container.innerHTML = '<p style="padding:16px;color:#94a3b8;">No data yet.</p>';
+            return;
+        }
+        let html = '<table><thead>';
+        html += `<tr><th rowspan="2">${escapeHtml(rowLabel)} ⟍ ${escapeHtml(colLabel)}</th>` +
+            colKeys.map(ck => `<th colspan="${valueLabels.length}">${escapeHtml(ck)}</th>`).join('') + '</tr><tr>';
+        colKeys.forEach(() => { valueLabels.forEach(vl => { html += `<th>${escapeHtml(vl)}</th>`; }); });
+        html += '</tr></thead><tbody>';
+        rowKeys.forEach(rk => {
+            html += `<tr><td style="font-weight:600;">${escapeHtml(rk)}</td>`;
+            colKeys.forEach(ck => {
+                valueIdxs.forEach(vi => {
+                    const v = cellValue(rk, ck, vi);
+                    html += `<td>${v === '' ? '' : escapeHtml(typeof v === 'number' ? v.toLocaleString() : v)}</td>`;
+                });
+            });
+            html += '</tr>';
+        });
+        html += '</tbody></table>';
+        container.innerHTML = html;
     }
 
     function renderReportTable(columns, rows) {
