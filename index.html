@@ -152,6 +152,7 @@
 
     <div class="tabs">
         <div class="tab active" data-tab="settings">⚙️ Settings</div>
+        <div class="tab" data-tab="overview">📊 Overview</div>
         <div class="tab" data-tab="live">📡 Live Monitor</div>
         <div class="tab" data-tab="sheet">📊 Sheet Preview</div>
         <div class="tab" data-tab="filters">🛡️ Filters</div>
@@ -199,6 +200,55 @@
                 <button class="btn btn-primary" onclick="saveSettings()">💾 Save Settings (in this browser)</button>
                 <button class="btn btn-outline" onclick="loadDefaults()">↺ Load Server Defaults</button>
             </div>
+        </div>
+    </div>
+
+    <!-- OVERVIEW TAB -->
+    <div class="tab-content" id="overview">
+        <div class="msg-banner" id="overviewBanner"></div>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; flex-wrap:wrap; gap:10px;">
+            <h3>📊 Executive Overview</h3>
+            <button class="btn btn-outline" onclick="loadOverviewData()" style="margin:0;">🔄 Refresh</button>
+        </div>
+        <div class="stats-row" id="overviewKPIs"></div>
+
+        <div class="chart-row">
+            <div class="chart-box">
+                <h3>Unit-wise Actual OS vs Mail OS</h3>
+                <div class="chart-canvas-wrap"><canvas id="overviewChart1"></canvas></div>
+            </div>
+            <div class="chart-box">
+                <h3>Overall Mail Status</h3>
+                <div class="chart-canvas-wrap"><canvas id="overviewChart2"></canvas></div>
+            </div>
+        </div>
+        <div class="chart-row">
+            <div class="chart-box" style="flex:1 1 100%;">
+                <h3>Top 10 Outstanding Payers</h3>
+                <div class="chart-canvas-wrap" style="height:420px;"><canvas id="overviewChart3"></canvas></div>
+            </div>
+        </div>
+
+        <div class="card" style="margin-top:10px;">
+            <h3>📑 Detailed Reports</h3>
+            <div class="form-row" style="align-items:flex-end; flex-wrap:wrap;">
+                <div class="form-group" style="margin:0; min-width:260px;">
+                    <label>Select Report</label>
+                    <select id="overviewReportSelector" onchange="renderOverviewReportPreview()">
+                        <option value="unit_summary">Unit Summary</option>
+                        <option value="unit_payer_summary">Unit Payer Summary</option>
+                        <option value="pending_mail">Pending Mail</option>
+                        <option value="mail_sent">Mail Sent</option>
+                        <option value="top20">Top 20 Outstanding</option>
+                        <option value="overall_summary">Overall Summary</option>
+                    </select>
+                </div>
+                <div>
+                    <button class="btn btn-primary" onclick="exportOverviewSelectedReport()">📊 Export Selected to Excel</button>
+                    <button class="btn btn-outline" onclick="exportOverviewFullReport()">📦 Export Full Report (All Sheets)</button>
+                </div>
+            </div>
+            <div class="sheet-preview" id="overviewReportPreview" style="margin-top:16px;"></div>
         </div>
     </div>
 
@@ -527,6 +577,7 @@
     // Tab switching
     let analyticsLoaded = false;
     let reportLoaded = false;
+    let overviewLoaded = false;
     document.querySelectorAll('.tab').forEach(tab => {
         tab.addEventListener('click', () => {
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
@@ -534,11 +585,15 @@
             tab.classList.add('active');
             document.getElementById(tab.dataset.tab).classList.add('active');
             if (tab.dataset.tab === 'sheet' && !lastSheetData) renderSheetPreview();
+            if (tab.dataset.tab === 'overview' && !overviewLoaded) loadOverviewData();
             if (tab.dataset.tab === 'analytics' && !analyticsLoaded) loadAnalyticsData();
             if (tab.dataset.tab === 'report' && !reportLoaded) loadReportColumns();
             setTimeout(() => {
                 if (comparisonChart) comparisonChart.resize();
                 if (reportChart) reportChart.resize();
+                if (overviewChart1) overviewChart1.resize();
+                if (overviewChart2) overviewChart2.resize();
+                if (overviewChart3) overviewChart3.resize();
             }, 50);
         });
     });
@@ -546,11 +601,15 @@
     function invalidateDerivedTabs() {
         analyticsLoaded = false;
         reportLoaded = false;
+        overviewLoaded = false;
     }
 
     window.addEventListener('resize', () => {
         if (comparisonChart) comparisonChart.resize();
         if (reportChart) reportChart.resize();
+        if (overviewChart1) overviewChart1.resize();
+        if (overviewChart2) overviewChart2.resize();
+        if (overviewChart3) overviewChart3.resize();
     });
 
     function toggleRobot() {
@@ -1064,6 +1123,409 @@
         const data = getFilteredData();
         const type = document.getElementById('chartTypeSelector').value;
         renderComparisonChart(data, type);
+    }
+
+    // ============================================================
+    // OVERVIEW TAB — Executive summary + sabhi pipeline reports
+    // Logic insurance_recovery_pipeline.py ke report-generator jaisa hi hai.
+    // Sheet columns (Analytics tab jaisa hi layout):
+    // 0=Unit, 1=Payer/Company, 2=Net OS after deposit Adj. (Lacs me),
+    // 7=Date, 9=Deduction, 10=Outstanding (Mail OS)
+    // ============================================================
+    let overviewData = null;
+    let overviewChart1, overviewChart2, overviewChart3;
+
+    function formatINR(num) {
+        const n = Number(num) || 0;
+        return Math.round(n).toLocaleString('en-IN');
+    }
+
+    function parseNum(val) {
+        const n = parseFloat((val || '').toString().replace(/[^\d.-]/g, ''));
+        return isNaN(n) ? 0 : n;
+    }
+
+    function computeOverviewData() {
+        if (!lastSheetData || !lastSheetData.rows || !lastSheetData.rows.length) return null;
+        const agg = {};
+        lastSheetData.rows.forEach(row => {
+            const unit = (row[0] || '').toString().trim() || 'Unknown';
+            const payer = (row[1] || '').toString().trim() || 'Unknown';
+            const actualOS = parseNum(row[2]) * 100000; // Lacs -> actual amount, jaise Python script me
+            const dateStr = (row[7] || '').toString().trim();
+            const deduction = parseNum(row[9]);
+            const mailRaw = (row[10] || '').toString().trim();
+            const mailFilled = mailRaw !== '';
+            const mailOS = parseNum(row[10]);
+            const key = unit + '|||' + payer;
+            if (!agg[key]) agg[key] = { unit, payer, actualOS: 0, deduction: 0, mailOS: 0, mailFilled: false, lastDate: null };
+            const a = agg[key];
+            a.actualOS += actualOS;
+            a.deduction += deduction;
+            a.mailOS += mailOS;
+            if (mailFilled) a.mailFilled = true;
+            if (dateStr) {
+                const d = new Date(dateStr);
+                if (!isNaN(d.getTime()) && (!a.lastDate || d > a.lastDate)) a.lastDate = d;
+            }
+        });
+
+        const payerAgg = Object.values(agg).map(a => ({
+            unit: a.unit, payer: a.payer, actualOS: a.actualOS, deduction: a.deduction,
+            mailOS: a.mailOS, difference: a.actualOS - a.mailOS,
+            mailSent: a.mailFilled ? 'Yes' : 'No',
+            lastDate: a.lastDate ? a.lastDate.toLocaleDateString('en-IN') : '',
+        }));
+
+        const unitMap = {};
+        payerAgg.forEach(p => {
+            if (!unitMap[p.unit]) unitMap[p.unit] = { unit: p.unit, totalPayers: 0, mailSentCount: 0, actualOS: 0, mailOS: 0, deduction: 0 };
+            const u = unitMap[p.unit];
+            u.totalPayers += 1;
+            if (p.mailSent === 'Yes') u.mailSentCount += 1;
+            u.actualOS += p.actualOS;
+            u.mailOS += p.mailOS;
+            u.deduction += p.deduction;
+        });
+        const unitSummary = Object.values(unitMap).map(u => ({
+            ...u, mailPending: u.totalPayers - u.mailSentCount, difference: u.actualOS - u.mailOS,
+        }));
+
+        const grandTotal = {
+            unit: 'Grand Total',
+            totalPayers: unitSummary.reduce((s, u) => s + u.totalPayers, 0),
+            mailSentCount: unitSummary.reduce((s, u) => s + u.mailSentCount, 0),
+            mailPending: unitSummary.reduce((s, u) => s + u.mailPending, 0),
+            actualOS: unitSummary.reduce((s, u) => s + u.actualOS, 0),
+            mailOS: unitSummary.reduce((s, u) => s + u.mailOS, 0),
+            difference: unitSummary.reduce((s, u) => s + u.difference, 0),
+            deduction: unitSummary.reduce((s, u) => s + u.deduction, 0),
+        };
+
+        const pendingList = payerAgg.filter(p => p.mailSent === 'No')
+            .sort((a, b) => a.unit.localeCompare(b.unit) || a.payer.localeCompare(b.payer));
+        const mailSentList = payerAgg.filter(p => p.mailSent === 'Yes');
+        const top20 = [...payerAgg].sort((a, b) => b.actualOS - a.actualOS).slice(0, 20);
+        const top10Payers = (() => {
+            const byPayer = {};
+            payerAgg.forEach(p => { byPayer[p.payer] = (byPayer[p.payer] || 0) + p.actualOS; });
+            return Object.entries(byPayer).sort((a, b) => b[1] - a[1]).slice(0, 10);
+        })();
+
+        const totalUnits = unitSummary.length;
+        const totalPayers = new Set(payerAgg.map(p => p.payer)).size;
+        const totalActual = grandTotal.actualOS;
+        const totalMail = grandTotal.mailOS;
+        const totalDiff = grandTotal.difference;
+        const totalDeduction = grandTotal.deduction;
+        const coverage = totalActual !== 0 ? (totalMail / totalActual * 100) : 0;
+
+        return {
+            payerAgg, unitSummary, grandTotal, pendingList, mailSentList, top20, top10Payers,
+            kpis: { totalUnits, totalPayers, totalActual, totalMail, totalDiff, totalDeduction, coverage },
+        };
+    }
+
+    async function loadOverviewData() {
+        overviewLoaded = true;
+        hideBanner('overviewBanner');
+        if (!lastSheetData) await renderSheetPreview();
+        overviewData = computeOverviewData();
+        if (!overviewData) {
+            showBanner('overviewBanner', 'err', '❌ Sheet me koi data nahi mila.');
+            document.getElementById('overviewKPIs').innerHTML = '';
+            return;
+        }
+        renderOverviewKPIs();
+        renderOverviewCharts();
+        renderOverviewReportPreview();
+    }
+
+    function renderOverviewKPIs() {
+        const k = overviewData.kpis;
+        const cards = [
+            ['Total Units', k.totalUnits],
+            ['Unique Payers', k.totalPayers],
+            ['Total Actual OS', '₹' + formatINR(k.totalActual)],
+            ['Total Mail OS', '₹' + formatINR(k.totalMail)],
+            ['Total Difference', '₹' + formatINR(k.totalDiff)],
+            ['Mail Coverage', k.coverage.toFixed(2) + '%'],
+        ];
+        document.getElementById('overviewKPIs').innerHTML = cards.map(([label, val]) =>
+            `<div class="stat-card"><div class="stat-value" style="font-size:1.25rem;">${escapeHtml(String(val))}</div><div class="stat-label">${escapeHtml(label)}</div></div>`
+        ).join('');
+    }
+
+    function renderOverviewCharts() {
+        const d = overviewData;
+        const ctx1 = document.getElementById('overviewChart1').getContext('2d');
+        if (overviewChart1) overviewChart1.destroy();
+        overviewChart1 = new Chart(ctx1, {
+            type: 'bar',
+            data: {
+                labels: d.unitSummary.map(u => u.unit),
+                datasets: [
+                    { label: 'Actual OS', data: d.unitSummary.map(u => u.actualOS), backgroundColor: '#1b4a7a' },
+                    { label: 'Mail OS', data: d.unitSummary.map(u => u.mailOS), backgroundColor: '#e67e22' },
+                ],
+            },
+            options: { responsive: true, maintainAspectRatio: false },
+        });
+
+        const ctx2 = document.getElementById('overviewChart2').getContext('2d');
+        if (overviewChart2) overviewChart2.destroy();
+        overviewChart2 = new Chart(ctx2, {
+            type: 'pie',
+            data: {
+                labels: ['Mail Sent', 'Pending'],
+                datasets: [{ data: [d.mailSentList.length, d.pendingList.length], backgroundColor: ['#27ae60', '#e74c3c'] }],
+            },
+            options: { responsive: true, maintainAspectRatio: false },
+        });
+
+        const ctx3 = document.getElementById('overviewChart3').getContext('2d');
+        if (overviewChart3) overviewChart3.destroy();
+        overviewChart3 = new Chart(ctx3, {
+            type: 'bar',
+            data: {
+                labels: d.top10Payers.map(p => p[0]),
+                datasets: [{ label: 'Actual OS', data: d.top10Payers.map(p => p[1]), backgroundColor: '#1b4a7a' }],
+            },
+            options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false },
+        });
+    }
+
+    function getOverviewReportData(reportKey) {
+        const d = overviewData;
+        if (!d) return null;
+        switch (reportKey) {
+            case 'unit_summary':
+                return {
+                    columns: ['Unit', 'Total_Payers', 'Mail_Sent_Count', 'Mail_Pending', 'Actual_OS', 'Mail_OS', 'Difference', 'Deduction'],
+                    currencyCols: ['Actual_OS', 'Mail_OS', 'Difference', 'Deduction'],
+                    rows: d.unitSummary.map(u => ({
+                        Unit: u.unit, Total_Payers: u.totalPayers, Mail_Sent_Count: u.mailSentCount,
+                        Mail_Pending: u.mailPending, Actual_OS: u.actualOS, Mail_OS: u.mailOS,
+                        Difference: u.difference, Deduction: u.deduction,
+                    })),
+                };
+            case 'unit_payer_summary':
+                return {
+                    columns: ['Unit', 'Payer', 'Actual_OS', 'Mail_OS', 'Difference', 'Deduction', 'Mail_Sent'],
+                    currencyCols: ['Actual_OS', 'Mail_OS', 'Difference', 'Deduction'],
+                    rows: d.payerAgg.map(p => ({
+                        Unit: p.unit, Payer: p.payer, Actual_OS: p.actualOS, Mail_OS: p.mailOS,
+                        Difference: p.difference, Deduction: p.deduction, Mail_Sent: p.mailSent,
+                    })),
+                };
+            case 'pending_mail':
+                return {
+                    columns: ['Unit', 'Payer', 'Actual_OS', 'Status'],
+                    currencyCols: ['Actual_OS'],
+                    rows: d.pendingList.map(p => ({ Unit: p.unit, Payer: p.payer, Actual_OS: p.actualOS, Status: 'Pending' })),
+                    groupByUnit: true,
+                };
+            case 'mail_sent':
+                return {
+                    columns: ['Unit', 'Payer', 'Actual_OS', 'Mail_OS', 'Deduction', 'Date'],
+                    currencyCols: ['Actual_OS', 'Mail_OS', 'Deduction'],
+                    rows: d.mailSentList.map(p => ({ Unit: p.unit, Payer: p.payer, Actual_OS: p.actualOS, Mail_OS: p.mailOS, Deduction: p.deduction, Date: p.lastDate })),
+                };
+            case 'top20':
+                return {
+                    columns: ['Unit', 'Payer', 'Actual_OS', 'Mail_OS', 'Difference', 'Deduction', 'Mail_Sent'],
+                    currencyCols: ['Actual_OS', 'Mail_OS', 'Difference', 'Deduction'],
+                    rows: d.top20.map(p => ({ Unit: p.unit, Payer: p.payer, Actual_OS: p.actualOS, Mail_OS: p.mailOS, Difference: p.difference, Deduction: p.deduction, Mail_Sent: p.mailSent })),
+                };
+            case 'overall_summary':
+                return {
+                    isOverall: true,
+                    kpiRows: [
+                        ['Total Units', d.kpis.totalUnits],
+                        ['Total Unique Payers', d.kpis.totalPayers],
+                        ['Total Actual OS', d.kpis.totalActual],
+                        ['Total Mail OS', d.kpis.totalMail],
+                        ['Total Difference', d.kpis.totalDiff],
+                        ['Total Deduction', d.kpis.totalDeduction],
+                        ['Overall Mail Coverage %', d.kpis.coverage.toFixed(2) + '%'],
+                    ],
+                    columns: ['Unit', 'Total_Payers', 'Mail_Sent_Count', 'Mail_Pending', 'Actual_OS', 'Mail_OS', 'Difference', 'Deduction'],
+                    currencyCols: ['Actual_OS', 'Mail_OS', 'Difference', 'Deduction'],
+                    rows: [...d.unitSummary.map(u => ({
+                        Unit: u.unit, Total_Payers: u.totalPayers, Mail_Sent_Count: u.mailSentCount,
+                        Mail_Pending: u.mailPending, Actual_OS: u.actualOS, Mail_OS: u.mailOS,
+                        Difference: u.difference, Deduction: u.deduction,
+                    })), {
+                        Unit: 'Grand Total', Total_Payers: d.grandTotal.totalPayers, Mail_Sent_Count: d.grandTotal.mailSentCount,
+                        Mail_Pending: d.grandTotal.mailPending, Actual_OS: d.grandTotal.actualOS, Mail_OS: d.grandTotal.mailOS,
+                        Difference: d.grandTotal.difference, Deduction: d.grandTotal.deduction,
+                    }],
+                };
+            default:
+                return null;
+        }
+    }
+
+    function renderOverviewReportPreview() {
+        if (!overviewData) return;
+        const reportKey = document.getElementById('overviewReportSelector').value;
+        const rep = getOverviewReportData(reportKey);
+        const container = document.getElementById('overviewReportPreview');
+        if (!rep) { container.innerHTML = '<p style="padding:16px;color:#94a3b8;">Data uplabdh nahi hai.</p>'; return; }
+
+        let html = '';
+        if (rep.isOverall) {
+            html += '<table style="margin-bottom:18px;"><thead><tr><th>Metric</th><th>Value</th></tr></thead><tbody>';
+            rep.kpiRows.forEach(([m, v]) => {
+                const disp = typeof v === 'number' ? formatINR(v) : v;
+                html += `<tr><td>${escapeHtml(m)}</td><td>${escapeHtml(String(disp))}</td></tr>`;
+            });
+            html += '</tbody></table>';
+        }
+
+        html += '<table><thead><tr>' + rep.columns.map(c => `<th>${escapeHtml(c)}</th>`).join('') + '</tr></thead><tbody>';
+        rep.rows.forEach(row => {
+            html += '<tr>' + rep.columns.map(c => {
+                const v = row[c];
+                const disp = rep.currencyCols.includes(c) && typeof v === 'number' ? formatINR(v) : (v ?? '');
+                return `<td>${escapeHtml(String(disp))}</td>`;
+            }).join('') + '</tr>';
+        });
+        html += '</tbody></table>';
+        container.innerHTML = html;
+    }
+
+    // ---------- Overview: Excel export helpers ----------
+    const OVERVIEW_HEADER_FILL = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1B4A7A' } };
+    const OVERVIEW_HEADER_FONT = { bold: true, color: { argb: 'FFFFFFFF' } };
+    const OVERVIEW_SUBTOTAL_FILL = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF2CC' } };
+
+    function styleOverviewSheet(ws, columns, currencyCols) {
+        ws.getRow(1).eachCell(cell => { cell.fill = OVERVIEW_HEADER_FILL; cell.font = OVERVIEW_HEADER_FONT; cell.alignment = { horizontal: 'center', vertical: 'middle' }; });
+        ws.columns.forEach((col, i) => {
+            col.width = Math.max(16, (columns[i] || '').length + 4);
+            if (currencyCols.includes(columns[i])) col.numFmt = '#,##,##0';
+        });
+        ws.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: columns.length } };
+        ws.views = [{ state: 'frozen', ySplit: 1 }];
+    }
+
+    function addSimpleReportSheet(wb, sheetName, rep) {
+        const ws = wb.addWorksheet(sheetName);
+        ws.addRow(rep.columns);
+        rep.rows.forEach(r => ws.addRow(rep.columns.map(c => r[c])));
+        styleOverviewSheet(ws, rep.columns, rep.currencyCols);
+        return ws;
+    }
+
+    function addPendingMailSheet(wb, rep) {
+        const ws = wb.addWorksheet('Pending Mail');
+        ws.addRow(rep.columns);
+        let currentUnit = null, unitTotal = 0;
+        const flushSubtotal = () => {
+            if (currentUnit === null) return;
+            const row = ws.addRow([`Total for ${currentUnit}`, '', unitTotal, '']);
+            row.eachCell(cell => { cell.fill = OVERVIEW_SUBTOTAL_FILL; cell.font = { bold: true }; });
+            ws.mergeCells(row.number, 1, row.number, 2);
+        };
+        rep.rows.forEach(r => {
+            if (currentUnit !== null && r.Unit !== currentUnit) { flushSubtotal(); unitTotal = 0; }
+            ws.addRow([r.Unit, r.Payer, r.Actual_OS, r.Status]);
+            unitTotal += r.Actual_OS;
+            currentUnit = r.Unit;
+        });
+        flushSubtotal();
+        styleOverviewSheet(ws, rep.columns, rep.currencyCols);
+        return ws;
+    }
+
+    function addOverallSummarySheet(wb, rep) {
+        const ws = wb.addWorksheet('Overall Summary');
+        ws.addRow(['Metric', 'Value']);
+        rep.kpiRows.forEach(([m, v]) => ws.addRow([m, v]));
+        ws.getRow(1).eachCell(cell => { cell.fill = OVERVIEW_HEADER_FILL; cell.font = OVERVIEW_HEADER_FONT; });
+        const breakdownStartRow = rep.kpiRows.length + 3;
+        const headerRow = ws.getRow(breakdownStartRow);
+        rep.columns.forEach((c, i) => { headerRow.getCell(i + 1).value = c; });
+        headerRow.eachCell(cell => { cell.fill = OVERVIEW_HEADER_FILL; cell.font = OVERVIEW_HEADER_FONT; cell.alignment = { horizontal: 'center' }; });
+        rep.rows.forEach(r => ws.addRow(rep.columns.map(c => r[c])));
+        ws.columns.forEach((col, i) => { col.width = Math.max(16, (rep.columns[i] || 'Value').length + 4); });
+        rep.columns.forEach((c, i) => {
+            if (rep.currencyCols.includes(c)) {
+                for (let rIdx = breakdownStartRow + 1; rIdx <= ws.rowCount; rIdx++) ws.getCell(rIdx, i + 1).numFmt = '#,##,##0';
+            }
+        });
+        return ws;
+    }
+
+    async function buildOverviewWorkbookSheet(wb, reportKey) {
+        const rep = getOverviewReportData(reportKey);
+        if (!rep) return;
+        if (reportKey === 'pending_mail') addPendingMailSheet(wb, rep);
+        else if (reportKey === 'overall_summary') addOverallSummarySheet(wb, rep);
+        else addSimpleReportSheet(wb, ({
+            unit_summary: 'Unit Summary', unit_payer_summary: 'Unit Payer Summary',
+            mail_sent: 'Mail Sent', top20: 'Top 20 Outstanding',
+        })[reportKey] || 'Report', rep);
+    }
+
+    async function exportOverviewSelectedReport() {
+        if (!overviewData) { alert('Pehle Overview data load karein (🔄 Refresh button dabayein).'); return; }
+        const reportKey = document.getElementById('overviewReportSelector').value;
+        try {
+            const wb = new ExcelJS.Workbook();
+            await buildOverviewWorkbookSheet(wb, reportKey);
+            const buffer = await wb.xlsx.writeBuffer();
+            const blob = new Blob([buffer], { type: 'application/octet-stream' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = `${reportKey}.xlsx`;
+            link.click();
+        } catch (e) {
+            alert('Export fail ho gaya: ' + e.message);
+        }
+    }
+
+    async function exportOverviewFullReport() {
+        if (!overviewData) { alert('Pehle Overview data load karein (🔄 Refresh button dabayein).'); return; }
+        try {
+            const wb = new ExcelJS.Workbook();
+
+            const wsDash = wb.addWorksheet('Dashboard');
+            wsDash.getCell('A1').value = 'Mail Outstanding Report – Dashboard';
+            wsDash.getCell('A1').font = { bold: true, size: 14, color: { argb: 'FF0F2B4B' } };
+            let rowCursor = 3;
+            if (overviewChart1) {
+                const img1 = wb.addImage({ base64: overviewChart1.toBase64Image(), extension: 'png' });
+                wsDash.addImage(img1, { tl: { col: 0, row: rowCursor }, ext: { width: 560, height: 320 } });
+                rowCursor += 18;
+            }
+            if (overviewChart2) {
+                const img2 = wb.addImage({ base64: overviewChart2.toBase64Image(), extension: 'png' });
+                wsDash.addImage(img2, { tl: { col: 0, row: rowCursor }, ext: { width: 480, height: 320 } });
+                rowCursor += 18;
+            }
+            if (overviewChart3) {
+                const img3 = wb.addImage({ base64: overviewChart3.toBase64Image(), extension: 'png' });
+                wsDash.addImage(img3, { tl: { col: 0, row: rowCursor }, ext: { width: 600, height: 360 } });
+            }
+
+            await buildOverviewWorkbookSheet(wb, 'unit_summary');
+            await buildOverviewWorkbookSheet(wb, 'unit_payer_summary');
+            await buildOverviewWorkbookSheet(wb, 'pending_mail');
+            await buildOverviewWorkbookSheet(wb, 'mail_sent');
+            await buildOverviewWorkbookSheet(wb, 'top20');
+            await buildOverviewWorkbookSheet(wb, 'overall_summary');
+
+            const buffer = await wb.xlsx.writeBuffer();
+            const blob = new Blob([buffer], { type: 'application/octet-stream' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = `Mail_Outstanding_Report_${new Date().toISOString().slice(0, 10)}.xlsx`;
+            link.click();
+        } catch (e) {
+            alert('Export fail ho gaya: ' + e.message);
+        }
     }
 
     // ---------- Custom Report (Excel-style Pivot Table) ----------
