@@ -126,7 +126,7 @@ OUTPUT_COLUMNS = [
 
 HEADER_SYNONYMS = {
     "ClaimNumber": ["claim id", "claim no", "claim number", "claim_no", "claimno", "Claim No."],
-    "AdmissionNo": ["admission no", "admission_no", "adm no"],
+    "AdmissionNo": ["admission no", "admission_no", "adm no","admission no."],
     "PatientName": ["patient name", "name of patient", "patient", "name", "Customer Name"],
     "InsuranceCompany": [
         "tpa name", "insurance co", "insurance company", "sponsor name",
@@ -143,13 +143,13 @@ HEADER_SYNONYMS = {
     "Outstanding": [
         "net outstanding", "out standing", "outstanding amt", "sponsor approved amt",
         "outstanding amount", "outstanding", "balance due", "net bill amt",
-        "Net Bill Amt (Formula)", "Final AL Amount",
+        "Net Bill Amt (Formula)", "Final AL Amount","claim amount"
     ],
     "Deduction": [
         "deduction", "disallowed", "short paid",
         "deducation", "deduction amount", "deduction amt", "difference",
     ],
-    "Remarks": ["remarks", "deduction remarks", "claim status", "status"],
+    "Remarks": ["remarks", "deduction remarks", "claim status", "status","hospital remarks"],
 }
 
 
