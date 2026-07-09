@@ -637,6 +637,7 @@ DOMAIN_MAP = {
     "ericsontpa.com": "Ericson TPA",
     "fhpl.net": "Family Health Plan TPA",
     "generalicentral.com": "Generali Central Insurance",
+    "futuregenerali.in": "Generali Central Insurance",
     "geninsindia.com": "Genins India Insurance TPA",
     "ghpltpa.com": "Good Health Insurance TPA",
     "hdfcergo.com": "HDFC ERGO General Insurance",
@@ -646,6 +647,7 @@ DOMAIN_MAP = {
     "hitpa.co.in": "Health Insurance TPA",
     "heritagehealthtpa.com": "Heritage Health TPA",
     "heritagehealthtpa.co.in": "Heritage Health TPA",
+    "heritagecashlessahmd@gmail.com": "Heritage Health TPA",
     "bajoria.in": "Heritage Health TPA",
     "icicilombard.com": "ICICI Lombard General Insurance",
     "iffcotokio.co.in": "Iffco Tokio General Insurance",
@@ -654,6 +656,7 @@ DOMAIN_MAP = {
     "manipalcigna.com": "Manipal Cigna Health Insurance",
     "mdindia.com": "MDIndia Health Insurance TPA",
     "mediassist.in": "Medi Assist TPA",
+    "mediasistindia.com": "Medi Assist TPA",
     "medsave.in": "Medsave Health TPA",
     "navi.com": "Navi General Insurance",
     "nivabupa.com": "Niva Bupa Health Insurance",
@@ -672,7 +675,10 @@ DOMAIN_MAP = {
     "vidalhealth.com": "Vidal Health TPA",
     "vipulmedcorp.com": "Vidal Health TPA",
     "sbi.co.in": "State Bank Of India",
+    "piyushuc@gmail.com": "State Bank Of India",
     "volohealthtpa.com": "VOLO Health TPA",
+    "starhealth.biz": "Star Health & Allied Insurance",
+    "fci.gov.in": "Food Corporation Of India",
 }
 
 
