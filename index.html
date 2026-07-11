@@ -1210,7 +1210,8 @@
             const dateStr = (row[7] || '').toString().trim();
             const deduction = parseNum(row[9]);
             const mailRaw = (row[10] || '').toString().trim();
-            const mailFilled = mailRaw !== '';
+            const deductionRaw = (row[9] || '').toString().trim();
+            const mailFilled = mailRaw !== '' || deductionRaw !== '';
             const mailOS = parseNum(row[10]);
             const key = unit + '|||' + payer;
             if (!agg[key]) agg[key] = { unit, payer, actualOS: 0, deduction: 0, mailOS: 0, mailFilled: false, lastDate: null };
