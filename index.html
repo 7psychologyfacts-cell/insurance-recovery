@@ -141,6 +141,53 @@
         .resize-handle.dir-nw { top:-5px; left:-5px; width:16px; height:16px; cursor:nwse-resize; }
         .resize-handle.dir-se { bottom:-5px; right:-5px; width:16px; height:16px; cursor:nwse-resize; }
         .resize-handle.dir-sw { bottom:-5px; left:-5px; width:16px; height:16px; cursor:nesw-resize; }
+
+        /* ===================================================================
+           MOBILE / TABLET RESPONSIVE ENHANCEMENTS
+           Yeh poora block naya hai — kisi purani rule ko modify nahi kiya gaya.
+           Sirf screen-size ke hisaab se extra styling override hoti hai.
+           =================================================================== */
+        @media (max-width: 1024px) {
+            body { padding:14px; }
+            .chart-box { min-width:260px; }
+        }
+        @media (max-width: 768px) {
+            body { padding:8px; align-items:stretch; }
+            .dashboard { border-radius:10px; }
+            .header { padding:16px 18px; }
+            .header h1 { font-size:1.2rem; }
+            .status { font-size:0.78rem; padding:6px 14px; }
+            .tabs { padding:0 14px; }
+            .tab { padding:10px 14px; font-size:0.85rem; }
+            .tab-content { padding:16px; }
+            .config-grid { grid-template-columns:1fr; gap:16px; }
+            .card { padding:16px; }
+            .form-row { flex-direction:column; gap:0; }
+            .stats-row { gap:10px; }
+            .stat-card { min-width:100px; padding:12px 14px; }
+            .stat-card .stat-value { font-size:1.4rem; }
+            .btn { padding:9px 16px; font-size:0.85rem; }
+            .chart-row { gap:12px; }
+            .chart-box { min-width:100%; padding:14px; }
+            .chart-canvas-wrap { height:260px; }
+            .log-table-wrapper { overflow-x:auto; -webkit-overflow-scrolling:touch; }
+            .sheet-preview, .heatmap-wrap { -webkit-overflow-scrolling:touch; }
+            .robot-btn { width:54px; height:54px; font-size:1.7rem; bottom:16px; right:16px; }
+            .robot-popup { width:92vw; max-width:92vw; right:4vw; left:4vw; bottom:80px; height:70vh; max-height:70vh; }
+            .email-modal { width:96vw; height:88vh; }
+            .report-grid { grid-template-columns:1fr; }
+        }
+        @media (max-width: 480px) {
+            .header { flex-direction:column; align-items:flex-start; gap:10px; }
+            .header h1 { font-size:1.05rem; }
+            .tabs { gap:2px; }
+            .tab { padding:8px 10px; font-size:0.8rem; }
+            .stats-row { flex-direction:column; }
+            .stat-card { width:100%; }
+            .checkbox-group { gap:6px; }
+            .checkbox-item { font-size:0.8rem; padding:5px 10px; }
+            .robot-btn { width:48px; height:48px; font-size:1.5rem; }
+        }
     </style>
 </head>
 <body>
@@ -1140,6 +1187,14 @@
         return Math.round(n).toLocaleString('en-IN');
     }
 
+    // Bade rupee amounts ko Lakhs me dikhane ke liye (sirf display purpose,
+    // underlying data/calculations bilkul waise hi rehte hain).
+    function formatLakhs(num) {
+        const n = Number(num) || 0;
+        const lakhs = n / 100000;
+        return lakhs.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' L';
+    }
+
     function parseNum(val) {
         const n = parseFloat((val || '').toString().replace(/[^\d.-]/g, ''));
         return isNaN(n) ? 0 : n;
@@ -1246,9 +1301,9 @@
         const cards = [
             ['Total Units', k.totalUnits],
             ['Unique Payers', k.totalPayers],
-            ['Total Actual OS', '₹' + formatINR(k.totalActual)],
-            ['Total Mail OS', '₹' + formatINR(k.totalMail)],
-            ['Total Difference', '₹' + formatINR(k.totalDiff)],
+            ['Total Actual OS', '₹' + formatLakhs(k.totalActual)],
+            ['Total Mail OS', '₹' + formatLakhs(k.totalMail)],
+            ['Total Difference', '₹' + formatLakhs(k.totalDiff)],
             ['Mail Coverage', k.coverage.toFixed(2) + '%'],
         ];
         document.getElementById('overviewKPIs').innerHTML = cards.map(([label, val]) =>
