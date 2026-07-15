@@ -15,6 +15,7 @@ import time
 import email
 import email.policy
 import imaplib
+import base64
 from email import message_from_bytes
 from email.utils import parsedate_to_datetime
 
@@ -169,12 +170,38 @@ def read_eml(file_path: str) -> dict:
         date_dt = None
 
     plain_parts, html_parts = [], []
+    attachments = []  # NEW: [{filename, content_type, size, data_b64}] — mail ke real attachments
 
     if msg.is_multipart():
         for part in msg.walk():
-            ct = part.get_content_type()
-            if "attachment" in str(part.get("Content-Disposition", "")):
+            if part.is_multipart():
                 continue
+            ct = part.get_content_type()
+            content_disp = str(part.get("Content-Disposition", "") or "")
+            content_disp_lower = content_disp.lower()
+            filename = part.get_filename()
+            content_id = part.get("Content-ID")
+
+            # Signature/logo jaisi inline embedded images (cid: se html body me
+            # already dikh rahi hoti hain) ko attachment list me nahi dikhate.
+            if "inline" in content_disp_lower and content_id and ct.startswith("image/"):
+                continue
+
+            is_attachment = "attachment" in content_disp_lower or (filename and ct not in ("text/plain", "text/html"))
+            if is_attachment:
+                try:
+                    payload = part.get_payload(decode=True)
+                    if payload:
+                        attachments.append({
+                            "filename": filename or f"attachment_{len(attachments) + 1}",
+                            "content_type": ct or "application/octet-stream",
+                            "size": len(payload),
+                            "data_b64": base64.b64encode(payload).decode("ascii"),
+                        })
+                except Exception:
+                    pass
+                continue
+
             if ct == "text/plain":
                 try:
                     plain_parts.append(part.get_content())
@@ -204,6 +231,7 @@ def read_eml(file_path: str) -> dict:
         "plain_text": plain_body,
         "html_raw": html_body,
         "body_text": header + (plain_body or _html_to_text(html_body)),
+        "attachments": attachments,
         "file_path": file_path,
     }
 
@@ -664,7 +692,7 @@ DOMAIN_MAP = {
     "paramounttpa.com": "Paramount Health TPA",
     "rbi.org.in": "Reserve Bank of India",
     "rajasthan.gov.in": "RGHS",
-    "mppolice.gov.in": "MP Police",
+    "gov.in": "RGHS",
     "royalsundaram.in": "Royal Sundaram Insurance",
     "sbigeneral.in": "SBI General Insurance",
     "starhealth.in": "Star Health & Allied Insurance",
@@ -1128,6 +1156,35 @@ LOG_SHEET_NAME = "Sheet2"
 LOG_HEADER_ROW = ["Timestamp", "Subject", "From", "Company", "Amount", "Status", "Date", "Folder", "UID"]
 
 
+def _normalize_log_date(date_val) -> str:
+    """Sheet2 ke 'Date' column me hamesha ek hi format (dd/mm/yyyy) likhne ke liye —
+    kabhi yeh raw RFC email date string aati he (jaise 'Tue, 30 Jun 2026 16:11:32 +0530'),
+    kabhi already dd/mm/yyyy — dono ko isi ek format me le aata he. Agar kuch bhi parse
+    na ho paye to original value waisi hi wapas kar deta he (kuch missing/blank na ho)."""
+    if not date_val or date_val == "-":
+        return date_val or ""
+    s = str(date_val).strip()
+
+    # Pehle se dd/mm/yyyy ya dd-mm-yyyy jaisa format he?
+    m = re.match(r"^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$", s)
+    if m:
+        dd, mm, yyyy = m.groups()
+        try:
+            return f"{int(dd):02d}/{int(mm):02d}/{yyyy}"
+        except Exception:
+            return s
+
+    # RFC email date string (jaise "Tue, 30 Jun 2026 16:11:32 +0530")
+    try:
+        dt = parsedate_to_datetime(s)
+        if dt:
+            return dt.strftime("%d/%m/%Y")
+    except Exception:
+        pass
+
+    return s
+
+
 def _get_or_create_log_sheet(sheet_url: str):
     """Sheet2 ko kholta hai, na ho to naya bana deta hai — sirf logging ke liye, Sheet1 wale logic se alag."""
     gc = get_gspread_client()
@@ -1164,7 +1221,7 @@ def _append_log_to_sheet2(sheet_url: str, log_entry: dict):
             log_entry.get("company", ""),
             str(log_entry.get("amount", "")),
             log_entry.get("status", ""),
-            log_entry.get("date", ""),
+            _normalize_log_date(log_entry.get("date", "")),
             log_entry.get("folder", ""),
             log_entry.get("uid", ""),
         ]
@@ -1307,6 +1364,7 @@ def api_email_preview():
             "date": meta["date_str"],
             "html": meta.get("html_raw", ""),
             "text": meta.get("plain_text", ""),
+            "attachments": meta.get("attachments", []),
         })
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 200
