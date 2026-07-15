@@ -975,30 +975,31 @@
         }
     }
 
-    // Sheet Preview export me jo column poora numeric ho usse Number type me
-    // convert karta he (commas hata kar), taki Excel me woh text ki jagah
-    // asli numeric value ban kar export ho. Mix column (jisme text bhi ho)
-    // ko waise hi chodta he taki kuch galat na badle.
+    // Sheet Preview export me jo bhi cell numeric dikhti he (jaise "125000" ya
+    // "1,25,000") use Number type me convert karta he — per-cell check karta he
+    // (poore column ka nahi), taki ek row me koi alag value ho to bhi baaki
+    // numeric cells text bankar export na ho. Outstanding/Deduction column
+    // (header name se match) ko Detailed Reports jaisa hi Lakhs (1 decimal)
+    // me convert karta he.
+    function getLakhsColumnIndexes(headers) {
+        return headers
+            .map((h, i) => {
+                const hl = (h || '').toString().trim().toLowerCase();
+                return (hl.includes('outstanding') || hl.includes('deduction')) ? i : -1;
+            })
+            .filter(i => i !== -1);
+    }
+
     function toNumericSheetRows(headers, rows) {
         if (!rows || !rows.length) return rows || [];
-        const colCount = headers.length;
-        const isNumericCol = new Array(colCount).fill(true);
-        for (let c = 0; c < colCount; c++) {
-            let sawValue = false;
-            for (const row of rows) {
-                const raw = (row[c] ?? '').toString().trim();
-                if (raw === '') continue;
-                sawValue = true;
-                const cleaned = raw.replace(/,/g, '');
-                if (!/^-?\d+(\.\d+)?$/.test(cleaned)) { isNumericCol[c] = false; break; }
-            }
-            if (!sawValue) isNumericCol[c] = false;
-        }
+        const lakhsColIdx = getLakhsColumnIndexes(headers);
         return rows.map(row => row.map((cell, c) => {
-            if (!isNumericCol[c]) return cell;
             const raw = (cell ?? '').toString().trim();
-            if (raw === '') return '';
-            return Number(raw.replace(/,/g, ''));
+            if (raw === '') return cell;
+            const cleaned = raw.replace(/,/g, '').replace(/^₹\s*/, '').replace(/\/-$/, '');
+            if (!/^-?\d+(\.\d+)?$/.test(cleaned)) return cell;
+            const num = Number(cleaned);
+            return lakhsColIdx.includes(c) ? toLakhs1(num) : num;
         }));
     }
 
@@ -1010,7 +1011,8 @@
             ws.addRow(lastSheetData.headers);
             const numericRows = toNumericSheetRows(lastSheetData.headers, lastSheetData.rows);
             numericRows.forEach(r => ws.addRow(r));
-            styleOverviewSheet(ws, lastSheetData.headers, [], []);
+            const lakhsColNames = getLakhsColumnIndexes(lastSheetData.headers).map(i => lastSheetData.headers[i]);
+            styleOverviewSheet(ws, lastSheetData.headers, [], lakhsColNames);
             const buffer = await wb.xlsx.writeBuffer();
             const blob = new Blob([buffer], { type: 'application/octet-stream' });
             const link = document.createElement('a');
