@@ -193,7 +193,7 @@
 <body>
 <div class="dashboard">
     <div class="header">
-        <h1>🛡️ Insurance Recovery Pipeline</h1>
+        <h1>🛡️ Credit Collection MIS Module</h1>
         <div class="status" id="statusIndicator"><span class="status-circle active" id="statusCircle"></span> <span id="statusText">Ready</span></div>
     </div>
 
@@ -203,7 +203,6 @@
         <div class="tab" data-tab="live">📡 Live Monitor</div>
         <div class="tab" data-tab="sheet">📊 Sheet Preview</div>
         <div class="tab" data-tab="filters">🛡️ Filters</div>
-        <div class="tab" data-tab="analytics">📈 Analytics</div>
         <div class="tab" data-tab="report">🧮 Custom Report</div>
     </div>
 
@@ -271,8 +270,8 @@
         </div>
         <div class="chart-row">
             <div class="chart-box" style="flex:1 1 100%;">
-                <h3>Top 10 Outstanding Payers</h3>
-                <div class="chart-canvas-wrap" style="height:420px;"><canvas id="overviewChart3"></canvas></div>
+                <h3>Top Credit Receivable of Govt. Payers</h3>
+                <div class="heatmap-wrap" id="overviewGovtHeatmap"></div>
             </div>
         </div>
 
@@ -303,8 +302,8 @@
     <div class="tab-content" id="live">
         <div class="msg-banner" id="liveBanner"></div>
         <div class="stats-row">
-            <div class="stat-card"><div class="stat-value" id="processedCount">0</div><div class="stat-label">Processed</div></div>
-            <div class="stat-card"><div class="stat-value" id="skippedCount">0</div><div class="stat-label">Skipped</div></div>
+            <div class="stat-card"><div class="stat-value" id="processedCount">0</div><div class="stat-label">Total Receivable mails</div></div>
+            <div class="stat-card"><div class="stat-value" id="skippedCount">0</div><div class="stat-label">Other Mail</div></div>
             <div class="stat-card"><div class="stat-value" id="errorCount">0</div><div class="stat-label">Errors</div></div>
             <div class="stat-card"><div class="stat-value" id="remainingCount">0</div><div class="stat-label">Remaining</div></div>
         </div>
@@ -345,43 +344,6 @@
             <div class="form-group"><label>Sender Blacklist</label><textarea id="senderBlacklist"></textarea></div>
             <button class="btn btn-primary" onclick="saveFilters()">💾 Save Filters</button>
             <p style="font-size:0.78rem;color:#94a3b8;margin-top:8px;">These filters are sent to the pipeline the next time you click "Run Pipeline" — matching mails are skipped on the server side.</p>
-        </div>
-    </div>
-
-    <!-- ANALYTICS TAB -->
-    <div class="tab-content" id="analytics">
-        <div class="msg-banner" id="analyticsBanner"></div>
-        <div class="chart-controls">
-            <div class="form-group" style="margin:0;">
-                <label>Unit</label>
-                <select id="unitFilter" onchange="applyFilters()"><option value="All">All</option></select>
-            </div>
-            <div class="form-group" style="margin:0;">
-                <label>Company</label>
-                <select id="companyFilter" onchange="applyFilters()"><option value="All">All</option></select>
-            </div>
-            <div class="form-group" style="margin:0;">
-                <label>Chart Type</label>
-                <select id="chartTypeSelector" onchange="applyFilters()">
-                    <option value="bar" selected>Bar (comparison)</option>
-                    <option value="line">Line</option>
-                    <option value="pie">Pie</option>
-                    <option value="doughnut">Doughnut</option>
-                    <option value="radar">Radar</option>
-                    <option value="polarArea">Polar Area</option>
-                    <option value="histogram">Histogram (distribution)</option>
-                    <option value="heatmap">Heatmap (Unit × Company)</option>
-                </select>
-            </div>
-            <button class="btn btn-outline" onclick="loadAnalyticsData()" style="margin:0;">🔄 Load Data</button>
-        </div>
-        <div class="chart-row">
-            <div class="chart-box">
-                <h3>📊 Company-wise Outstanding / Deduction</h3>
-                <small id="analyticsChartNote" style="display:block;margin-bottom:8px;color:#94a3b8;"></small>
-                <div class="chart-canvas-wrap" id="comparisonChartWrap"><canvas id="comparisonChart"></canvas></div>
-                <div class="heatmap-wrap" id="comparisonHeatmap" style="display:none;"></div>
-            </div>
         </div>
     </div>
 
@@ -633,14 +595,12 @@
             document.getElementById(tab.dataset.tab).classList.add('active');
             if (tab.dataset.tab === 'sheet' && !lastSheetData) renderSheetPreview();
             if (tab.dataset.tab === 'overview' && !overviewLoaded) loadOverviewData();
-            if (tab.dataset.tab === 'analytics' && !analyticsLoaded) loadAnalyticsData();
             if (tab.dataset.tab === 'report' && !reportLoaded) loadReportColumns();
             setTimeout(() => {
                 if (comparisonChart) comparisonChart.resize();
                 if (reportChart) reportChart.resize();
                 if (overviewChart1) overviewChart1.resize();
                 if (overviewChart2) overviewChart2.resize();
-                if (overviewChart3) overviewChart3.resize();
             }, 50);
         });
     });
@@ -656,7 +616,6 @@
         if (reportChart) reportChart.resize();
         if (overviewChart1) overviewChart1.resize();
         if (overviewChart2) overviewChart2.resize();
-        if (overviewChart3) overviewChart3.resize();
     });
 
     function toggleRobot() {
@@ -1180,7 +1139,7 @@
     // 7=Date, 9=Deduction, 10=Outstanding (Mail OS)
     // ============================================================
     let overviewData = null;
-    let overviewChart1, overviewChart2, overviewChart3;
+    let overviewChart1, overviewChart2;
 
     function formatINR(num) {
         const n = Number(num) || 0;
@@ -1193,6 +1152,49 @@
         const n = Number(num) || 0;
         const lakhs = n / 100000;
         return lakhs.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' L';
+    }
+
+    // Outstanding / Mail_OS amounts sabhi jagah (Overview, Custom Report,
+    // Detailed Reports, exports) Lakhs me aur sirf 1 decimal ke saath dikhane
+    // ke liye — jaise Google Sheet me dikhta hai (250000 -> 2.5).
+    function toLakhs1(num) {
+        const n = Number(num) || 0;
+        return Math.round((n / 100000) * 10) / 10;
+    }
+    function formatLakhs1(num) {
+        return toLakhs1(num).toLocaleString('en-IN', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+    }
+
+    // ---------- Overview: "Top Credit Receivable of Govt. Payers" heatmap ----------
+    // Rows = fixed list of Govt. payer categories, Columns = fixed list of Units.
+    // Value = Mail_OS (Outstanding, last sheet column) summed for each Payer×Unit combo.
+    const GOVT_PAYER_ROWS = ['Ayushman', 'ECHS', 'CGHS', 'RGHS', 'ESIC', 'Railway', 'M P Police'];
+    const GOVT_UNIT_COLS = ['SG', 'Krishna', 'Naroda', 'Vijay', 'Surat', 'Vapi', 'Indore', 'Jabalpur', 'Jaipur', 'Mohali', 'PK Int.'];
+
+    function computeGovtPayerHeatmap(d) {
+        const matrix = {};
+        GOVT_PAYER_ROWS.forEach(r => { matrix[r] = {}; GOVT_UNIT_COLS.forEach(c => { matrix[r][c] = 0; }); });
+        (d.payerAgg || []).forEach(p => {
+            const payerLower = (p.payer || '').toString().trim().toLowerCase();
+            const unitLower = (p.unit || '').toString().trim().toLowerCase();
+            const rowMatch = GOVT_PAYER_ROWS.find(r => payerLower === r.toLowerCase()) ||
+                GOVT_PAYER_ROWS.find(r => payerLower.includes(r.toLowerCase()));
+            if (!rowMatch) return;
+            const colMatch = GOVT_UNIT_COLS.find(c => unitLower === c.toLowerCase()) ||
+                GOVT_UNIT_COLS.find(c => unitLower.includes(c.toLowerCase()));
+            if (!colMatch) return;
+            matrix[rowMatch][colMatch] += p.mailOS;
+        });
+        return matrix;
+    }
+
+    function renderOverviewGovtHeatmap(d) {
+        const matrix = computeGovtPayerHeatmap(d);
+        renderHeatmapTable(
+            'overviewGovtHeatmap', 'Payer ⟍ Unit', GOVT_PAYER_ROWS, GOVT_UNIT_COLS,
+            (r, c) => (matrix[r] && matrix[r][c]) || 0,
+            v => formatLakhs1(v)
+        );
     }
 
     function parseNum(val) {
@@ -1303,7 +1305,7 @@
             ['Total Units', k.totalUnits],
             ['Unique Payers', k.totalPayers],
             ['Total Actual OS', '₹' + formatLakhs(k.totalActual)],
-            ['Total Mail OS', '₹' + formatLakhs(k.totalMail)],
+            ['Total Mail OS', '₹' + formatLakhs1(k.totalMail) + ' L'],
             ['Total Difference', '₹' + formatLakhs(k.totalDiff)],
             ['Mail Coverage', k.coverage.toFixed(2) + '%'],
         ];
@@ -1339,16 +1341,7 @@
             options: { responsive: true, maintainAspectRatio: false },
         });
 
-        const ctx3 = document.getElementById('overviewChart3').getContext('2d');
-        if (overviewChart3) overviewChart3.destroy();
-        overviewChart3 = new Chart(ctx3, {
-            type: 'bar',
-            data: {
-                labels: d.top10Payers.map(p => p[0]),
-                datasets: [{ label: 'Actual OS', data: d.top10Payers.map(p => p[1]), backgroundColor: '#1b4a7a' }],
-            },
-            options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false },
-        });
+        renderOverviewGovtHeatmap(d);
     }
 
     function getOverviewReportData(reportKey) {
@@ -1359,6 +1352,7 @@
                 return {
                     columns: ['Unit', 'Total_Payers', 'Mail_Sent_Count', 'Mail_Pending', 'Actual_OS', 'Mail_OS', 'Difference', 'Deduction'],
                     currencyCols: ['Actual_OS', 'Mail_OS', 'Difference', 'Deduction'],
+                    lakhsCols: ['Mail_OS'],
                     rows: d.unitSummary.map(u => ({
                         Unit: u.unit, Total_Payers: u.totalPayers, Mail_Sent_Count: u.mailSentCount,
                         Mail_Pending: u.mailPending, Actual_OS: u.actualOS, Mail_OS: u.mailOS,
@@ -1369,6 +1363,7 @@
                 return {
                     columns: ['Unit', 'Payer', 'Actual_OS', 'Mail_OS', 'Difference', 'Deduction', 'Mail_Sent'],
                     currencyCols: ['Actual_OS', 'Mail_OS', 'Difference', 'Deduction'],
+                    lakhsCols: ['Mail_OS'],
                     rows: d.payerAgg.map(p => ({
                         Unit: p.unit, Payer: p.payer, Actual_OS: p.actualOS, Mail_OS: p.mailOS,
                         Difference: p.difference, Deduction: p.deduction, Mail_Sent: p.mailSent,
@@ -1385,12 +1380,14 @@
                 return {
                     columns: ['Unit', 'Payer', 'Actual_OS', 'Mail_OS', 'Deduction', 'Date'],
                     currencyCols: ['Actual_OS', 'Mail_OS', 'Deduction'],
+                    lakhsCols: ['Mail_OS'],
                     rows: d.mailSentList.map(p => ({ Unit: p.unit, Payer: p.payer, Actual_OS: p.actualOS, Mail_OS: p.mailOS, Deduction: p.deduction, Date: p.lastDate })),
                 };
             case 'top20':
                 return {
                     columns: ['Unit', 'Payer', 'Actual_OS', 'Mail_OS', 'Difference', 'Deduction', 'Mail_Sent'],
                     currencyCols: ['Actual_OS', 'Mail_OS', 'Difference', 'Deduction'],
+                    lakhsCols: ['Mail_OS'],
                     rows: d.top20.map(p => ({ Unit: p.unit, Payer: p.payer, Actual_OS: p.actualOS, Mail_OS: p.mailOS, Difference: p.difference, Deduction: p.deduction, Mail_Sent: p.mailSent })),
                 };
             case 'overall_summary':
@@ -1400,13 +1397,14 @@
                         ['Total Units', d.kpis.totalUnits],
                         ['Total Unique Payers', d.kpis.totalPayers],
                         ['Total Actual OS', d.kpis.totalActual],
-                        ['Total Mail OS', d.kpis.totalMail],
+                        ['Total Mail OS', d.kpis.totalMail, 'lakhs'],
                         ['Total Difference', d.kpis.totalDiff],
                         ['Total Deduction', d.kpis.totalDeduction],
                         ['Overall Mail Coverage %', d.kpis.coverage.toFixed(2) + '%'],
                     ],
                     columns: ['Unit', 'Total_Payers', 'Mail_Sent_Count', 'Mail_Pending', 'Actual_OS', 'Mail_OS', 'Difference', 'Deduction'],
                     currencyCols: ['Actual_OS', 'Mail_OS', 'Difference', 'Deduction'],
+                    lakhsCols: ['Mail_OS'],
                     rows: [...d.unitSummary.map(u => ({
                         Unit: u.unit, Total_Payers: u.totalPayers, Mail_Sent_Count: u.mailSentCount,
                         Mail_Pending: u.mailPending, Actual_OS: u.actualOS, Mail_OS: u.mailOS,
@@ -1432,8 +1430,8 @@
         let html = '';
         if (rep.isOverall) {
             html += '<table style="margin-bottom:18px;"><thead><tr><th>Metric</th><th>Value</th></tr></thead><tbody>';
-            rep.kpiRows.forEach(([m, v]) => {
-                const disp = typeof v === 'number' ? formatINR(v) : v;
+            rep.kpiRows.forEach(([m, v, kind]) => {
+                const disp = kind === 'lakhs' && typeof v === 'number' ? formatLakhs1(v) : (typeof v === 'number' ? formatINR(v) : v);
                 html += `<tr><td>${escapeHtml(m)}</td><td>${escapeHtml(String(disp))}</td></tr>`;
             });
             html += '</tbody></table>';
@@ -1443,7 +1441,9 @@
         rep.rows.forEach(row => {
             html += '<tr>' + rep.columns.map(c => {
                 const v = row[c];
-                const disp = rep.currencyCols.includes(c) && typeof v === 'number' ? formatINR(v) : (v ?? '');
+                const isLakhs = rep.lakhsCols && rep.lakhsCols.includes(c);
+                const disp = isLakhs && typeof v === 'number' ? formatLakhs1(v)
+                    : (rep.currencyCols.includes(c) && typeof v === 'number' ? formatINR(v) : (v ?? ''));
                 return `<td>${escapeHtml(String(disp))}</td>`;
             }).join('') + '</tr>';
         });
@@ -1456,11 +1456,12 @@
     const OVERVIEW_HEADER_FONT = { bold: true, color: { argb: 'FFFFFFFF' } };
     const OVERVIEW_SUBTOTAL_FILL = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF2CC' } };
 
-    function styleOverviewSheet(ws, columns, currencyCols) {
+    function styleOverviewSheet(ws, columns, currencyCols, lakhsCols) {
         ws.getRow(1).eachCell(cell => { cell.fill = OVERVIEW_HEADER_FILL; cell.font = OVERVIEW_HEADER_FONT; cell.alignment = { horizontal: 'center', vertical: 'middle' }; });
         ws.columns.forEach((col, i) => {
             col.width = Math.max(16, (columns[i] || '').length + 4);
-            if (currencyCols.includes(columns[i])) col.numFmt = '#,##,##0';
+            if (lakhsCols && lakhsCols.includes(columns[i])) col.numFmt = '0.0';
+            else if (currencyCols.includes(columns[i])) col.numFmt = '#,##,##0';
         });
         ws.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: columns.length } };
         ws.views = [{ state: 'frozen', ySplit: 1 }];
@@ -1469,8 +1470,10 @@
     function addSimpleReportSheet(wb, sheetName, rep) {
         const ws = wb.addWorksheet(sheetName);
         ws.addRow(rep.columns);
-        rep.rows.forEach(r => ws.addRow(rep.columns.map(c => r[c])));
-        styleOverviewSheet(ws, rep.columns, rep.currencyCols);
+        rep.rows.forEach(r => ws.addRow(rep.columns.map(c =>
+            rep.lakhsCols && rep.lakhsCols.includes(c) && typeof r[c] === 'number' ? toLakhs1(r[c]) : r[c]
+        )));
+        styleOverviewSheet(ws, rep.columns, rep.currencyCols, rep.lakhsCols);
         return ws;
     }
 
@@ -1498,16 +1501,23 @@
     function addOverallSummarySheet(wb, rep) {
         const ws = wb.addWorksheet('Overall Summary');
         ws.addRow(['Metric', 'Value']);
-        rep.kpiRows.forEach(([m, v]) => ws.addRow([m, v]));
+        rep.kpiRows.forEach(([m, v, kind]) => {
+            const row = ws.addRow([m, kind === 'lakhs' && typeof v === 'number' ? toLakhs1(v) : v]);
+            if (kind === 'lakhs') row.getCell(2).numFmt = '0.0';
+        });
         ws.getRow(1).eachCell(cell => { cell.fill = OVERVIEW_HEADER_FILL; cell.font = OVERVIEW_HEADER_FONT; });
         const breakdownStartRow = rep.kpiRows.length + 3;
         const headerRow = ws.getRow(breakdownStartRow);
         rep.columns.forEach((c, i) => { headerRow.getCell(i + 1).value = c; });
         headerRow.eachCell(cell => { cell.fill = OVERVIEW_HEADER_FILL; cell.font = OVERVIEW_HEADER_FONT; cell.alignment = { horizontal: 'center' }; });
-        rep.rows.forEach(r => ws.addRow(rep.columns.map(c => r[c])));
+        rep.rows.forEach(r => ws.addRow(rep.columns.map(c =>
+            rep.lakhsCols && rep.lakhsCols.includes(c) && typeof r[c] === 'number' ? toLakhs1(r[c]) : r[c]
+        )));
         ws.columns.forEach((col, i) => { col.width = Math.max(16, (rep.columns[i] || 'Value').length + 4); });
         rep.columns.forEach((c, i) => {
-            if (rep.currencyCols.includes(c)) {
+            if (rep.lakhsCols && rep.lakhsCols.includes(c)) {
+                for (let rIdx = breakdownStartRow + 1; rIdx <= ws.rowCount; rIdx++) ws.getCell(rIdx, i + 1).numFmt = '0.0';
+            } else if (rep.currencyCols.includes(c)) {
                 for (let rIdx = breakdownStartRow + 1; rIdx <= ws.rowCount; rIdx++) ws.getCell(rIdx, i + 1).numFmt = '#,##,##0';
             }
         });
@@ -1561,10 +1571,28 @@
                 wsDash.addImage(img2, { tl: { col: 0, row: rowCursor }, ext: { width: 480, height: 320 } });
                 rowCursor += 18;
             }
-            if (overviewChart3) {
-                const img3 = wb.addImage({ base64: overviewChart3.toBase64Image(), extension: 'png' });
-                wsDash.addImage(img3, { tl: { col: 0, row: rowCursor }, ext: { width: 600, height: 360 } });
-            }
+
+            // Top Credit Receivable of Govt. Payers — heatmap data as a table
+            // (values in Lakhs, Mail_OS based, 1 decimal — same as on-screen).
+            const govtMatrix = computeGovtPayerHeatmap(overviewData);
+            let hRow = rowCursor + 2;
+            wsDash.getCell(`A${hRow}`).value = 'Top Credit Receivable of Govt. Payers (Mail OS, in Lakhs)';
+            wsDash.getCell(`A${hRow}`).font = { bold: true, size: 12, color: { argb: 'FF0F2B4B' } };
+            hRow += 1;
+            const govtHeaderRow = wsDash.getRow(hRow);
+            govtHeaderRow.getCell(1).value = 'Payer ⟍ Unit';
+            GOVT_UNIT_COLS.forEach((c, i) => { govtHeaderRow.getCell(i + 2).value = c; });
+            govtHeaderRow.eachCell(cell => { cell.fill = OVERVIEW_HEADER_FILL; cell.font = OVERVIEW_HEADER_FONT; cell.alignment = { horizontal: 'center' }; });
+            GOVT_PAYER_ROWS.forEach((r, ri) => {
+                const row = wsDash.getRow(hRow + 1 + ri);
+                row.getCell(1).value = r;
+                row.getCell(1).font = { bold: true };
+                GOVT_UNIT_COLS.forEach((c, ci) => {
+                    const cell = row.getCell(ci + 2);
+                    cell.value = toLakhs1(govtMatrix[r][c]);
+                    cell.numFmt = '0.0';
+                });
+            });
 
             await buildOverviewWorkbookSheet(wb, 'unit_summary');
             await buildOverviewWorkbookSheet(wb, 'unit_payer_summary');
@@ -1588,6 +1616,11 @@
     let reportChart;
     let currentReportColumns = []; // ordered list of column names in currentReportRows, for table/export
     let pivotHeaders = [];
+    // Column names in currentReportColumns whose values came from the sheet's
+    // Outstanding/Mail_OS field (index 10) — displayed in Lakhs (1 decimal)
+    // everywhere in this tab (table + export), same as Overview/Detailed Reports.
+    const MAIL_OS_FIELD_IDX = 10;
+    let reportLakhsCols = new Set();
     let pivotState = { filters: [], columns: [], rows: [], values: [] }; // filters: [{idx, value}], others: [idx,...]
 
     async function loadReportColumns() {
@@ -1786,6 +1819,8 @@
         const colIdxs = pivotState.columns;
         const valueIdxs = pivotState.values;
 
+        reportLakhsCols = new Set();
+
         if (!rowIdxs.length && !colIdxs.length) {
             showBanner('reportBanner', 'err', 'Drag at least one field into Rows or Columns.');
             currentReportRows = null;
@@ -1808,6 +1843,9 @@
             const flat = computeFlatGroups(filteredRows, rowIdxs, valueIdxs, agg, headers);
             currentReportColumns = [flat.groupLabel, ...flat.valueColNames];
             currentReportRows = flat.rows;
+            if (agg !== 'count') {
+                valueIdxs.forEach((vi, i) => { if (vi === MAIL_OS_FIELD_IDX && flat.valueColNames[i]) reportLakhsCols.add(flat.valueColNames[i]); });
+            }
             renderReportTable(currentReportColumns, currentReportRows);
             renderReportChart(flat.groupLabel, flat.valueColNames, chartType, valueIdxs, rowIdxs, agg, headers);
             return;
@@ -1846,6 +1884,12 @@
             return Math.round(aggregate(b.perValue[vi], agg) * 100) / 100;
         }
 
+        if (agg !== 'count') {
+            valueIdxs.forEach((vi, i) => {
+                if (vi === MAIL_OS_FIELD_IDX) colKeys.forEach(ck => reportLakhsCols.add(`${ck} — ${valueColNames[i]}`));
+            });
+        }
+
         currentReportColumns = [rowLabel];
         colKeys.forEach(ck => valueLabels.forEach(vl => currentReportColumns.push(`${ck} — ${vl}`)));
         currentReportRows = rowKeyOrder.map(rk => {
@@ -1882,12 +1926,18 @@
             colKeys.map(ck => `<th colspan="${valueLabels.length}">${escapeHtml(ck)}</th>`).join('') + '</tr><tr>';
         colKeys.forEach(() => { valueLabels.forEach(vl => { html += `<th>${escapeHtml(vl)}</th>`; }); });
         html += '</tr></thead><tbody>';
+        let colValIdx = 0;
         rowKeys.forEach(rk => {
             html += `<tr><td style="font-weight:600;">${escapeHtml(rk)}</td>`;
+            colValIdx = 0;
             colKeys.forEach(ck => {
                 valueIdxs.forEach(vi => {
                     const v = cellValue(rk, ck, vi);
-                    html += `<td>${v === '' ? '' : escapeHtml(typeof v === 'number' ? v.toLocaleString() : v)}</td>`;
+                    const colName = currentReportColumns[1 + colValIdx];
+                    const isLakhs = reportLakhsCols.has(colName);
+                    const disp = v === '' ? '' : (typeof v === 'number' ? (isLakhs ? formatLakhs1(v) : v.toLocaleString()) : v);
+                    html += `<td>${escapeHtml(disp)}</td>`;
+                    colValIdx++;
                 });
             });
             html += '</tr>';
@@ -1904,7 +1954,11 @@
         }
         let html = '<table><thead><tr>' + columns.map(c => `<th>${escapeHtml(c)}</th>`).join('') + '</tr></thead><tbody>';
         rows.forEach(r => {
-            html += '<tr>' + columns.map(c => `<td>${escapeHtml(r[c])}</td>`).join('') + '</tr>';
+            html += '<tr>' + columns.map(c => {
+                const v = r[c];
+                const disp = reportLakhsCols.has(c) && typeof v === 'number' ? formatLakhs1(v) : v;
+                return `<td>${escapeHtml(disp)}</td>`;
+            }).join('') + '</tr>';
         });
         html += '</tbody></table>';
         container.innerHTML = html;
@@ -2000,8 +2054,13 @@
             const ws = wb.addWorksheet('Report');
             ws.addRow(currentReportColumns);
             ws.getRow(1).font = { bold: true };
-            currentReportRows.forEach(r => ws.addRow(currentReportColumns.map(c => r[c])));
-            ws.columns.forEach(col => { col.width = 22; });
+            currentReportRows.forEach(r => ws.addRow(currentReportColumns.map(c =>
+                reportLakhsCols.has(c) && typeof r[c] === 'number' ? toLakhs1(r[c]) : r[c]
+            )));
+            ws.columns.forEach((col, i) => {
+                col.width = 22;
+                if (reportLakhsCols.has(currentReportColumns[i])) col.numFmt = '0.0';
+            });
 
             if (reportChart) {
                 const imageBase64 = reportChart.toBase64Image();
