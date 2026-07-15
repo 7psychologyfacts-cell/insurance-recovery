@@ -78,7 +78,7 @@
         /* ---- Email preview modal (Live Monitor "Open" button) ---- */
         .email-modal-overlay { display:none; position:fixed; inset:0; background:rgba(15,23,42,0.55); z-index:2000; align-items:center; justify-content:center; padding:20px; }
         .email-modal-overlay.active { display:flex; }
-        .email-modal { background:#ffffff; width:min(760px, 100%); height:min(640px, 90vh); border-radius:14px; overflow:hidden; display:flex; flex-direction:column; box-shadow:0 30px 60px rgba(0,0,0,0.3); }
+        .email-modal { background:#ffffff; width:min(1520px, 100%); height:min(640px, 90vh); border-radius:14px; overflow:hidden; display:flex; flex-direction:column; box-shadow:0 30px 60px rgba(0,0,0,0.3); }
         .email-modal-header { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; padding:16px 18px; border-bottom:1px solid #e9edf4; background:#f8fafd; }
         .email-modal-meta { font-size:0.85rem; color:#334155; line-height:1.65; word-break:break-word; }
         .email-modal-meta strong { color:#0f2b4b; margin-right:4px; }
@@ -254,7 +254,7 @@
         <div class="msg-banner" id="overviewBanner"></div>
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; flex-wrap:wrap; gap:10px;">
             <h3>📊 Executive Overview</h3>
-            <button class="btn btn-outline" onclick="loadOverviewData()" style="margin:0;">🔄 Refresh</button>
+            <button class="btn btn-outline" onclick="refreshAllData()" style="margin:0;">🔄 Refresh</button>
         </div>
         <div class="stats-row" id="overviewKPIs"></div>
 
@@ -308,11 +308,18 @@
             <div class="stat-card"><div class="stat-value" id="remainingCount">0</div><div class="stat-label">Remaining</div></div>
         </div>
         <div class="progress-container"><div class="progress-bar" id="progressBar"></div></div>
-        <div style="display:flex; gap:12px; margin-bottom:16px; flex-wrap:wrap;">
+        <div style="display:flex; gap:12px; margin-bottom:16px; flex-wrap:wrap; align-items:center;">
             <button class="btn btn-primary" id="startBtn" onclick="startPipeline()">▶️ Run Pipeline</button>
             <button class="btn btn-outline" onclick="stopPipeline()">⏹️ Stop</button>
+            <div style="display:flex; align-items:center; gap:8px;">
+                <label style="font-size:0.85rem; color:#2c3e50; font-weight:500; white-space:nowrap;">From</label>
+                <input type="date" id="liveHistoryFromDate" style="padding:9px 12px; border:1px solid #dce3eb; border-radius:8px; font-size:0.85rem;">
+                <label style="font-size:0.85rem; color:#2c3e50; font-weight:500; white-space:nowrap;">To</label>
+                <input type="date" id="liveHistoryToDate" style="padding:9px 12px; border:1px solid #dce3eb; border-radius:8px; font-size:0.85rem;">
+            </div>
             <button class="btn btn-outline" onclick="loadLogHistory()">🕘 Load History</button>
         </div>
+        <p style="font-size:0.78rem;color:#94a3b8;margin-top:-8px;margin-bottom:10px;">From/To date daal kar "Load History" dabaayein — sirf usi range ki history dikhegi. Dono khaali chodne par poori history aayegi.</p>
         <p style="font-size:0.8rem;color:#94a3b8;margin-bottom:10px;">Each email is fetched and processed one at a time, so this table updates live as every mail finishes — please don't close the tab while it's running. Every attempt is also logged to "Sheet2" in your Google Sheet automatically. Refreshed the page? Click "🕘 Load History" to bring back past runs (with working Open buttons) from Sheet2.</p>
         <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
             <h3>📋 Email Log</h3>
@@ -329,7 +336,7 @@
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; flex-wrap:wrap; gap:10px;">
             <h3>📋 Google Sheet Data Preview</h3>
             <div>
-                <button class="btn btn-outline" onclick="invalidateDerivedTabs(); renderSheetPreview()">🔄 Refresh</button>
+                <button class="btn btn-outline" onclick="refreshAllData()">🔄 Refresh</button>
                 <button class="btn btn-outline" onclick="downloadExcel()">📊 Export to Excel</button>
             </div>
         </div>
@@ -611,6 +618,17 @@
         overviewLoaded = false;
     }
 
+    // Kisi bhi ek "🔄 Refresh" button ko dabaane par sheet data + Overview
+    // (Detailed Reports sahit) + agar Custom Report pehle load ho chuka ho
+    // to woh bhi — sab ek saath refresh ho jaate hain.
+    async function refreshAllData() {
+        const wasReportLoaded = reportLoaded;
+        invalidateDerivedTabs();
+        await renderSheetPreview();
+        await loadOverviewData();
+        if (wasReportLoaded) await loadReportColumns();
+    }
+
     window.addEventListener('resize', () => {
         if (comparisonChart) comparisonChart.resize();
         if (reportChart) reportChart.resize();
@@ -741,6 +759,38 @@
         document.getElementById('emailPreviewModal').classList.remove('active');
     }
 
+    // Live Monitor "Load History" ke liye date-range filter — item.date kai
+    // alag-alag formats me aa sakti he (ISO ya dd/mm/yyyy), isliye dono try karte hain.
+    function parseFlexibleDate(str) {
+        if (!str) return null;
+        const s = str.toString().trim();
+        let d = new Date(s);
+        if (!isNaN(d.getTime())) return d;
+        const m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
+        if (m) {
+            let [, dd, mm, yy] = m;
+            if (yy.length === 2) yy = '20' + yy;
+            d = new Date(`${yy}-${mm.padStart(2, '0')}-${dd.padStart(2, '0')}`);
+            if (!isNaN(d.getTime())) return d;
+        }
+        return null;
+    }
+
+    function filterLogItemsByDateRange(items) {
+        const fromVal = document.getElementById('liveHistoryFromDate').value;
+        const toVal = document.getElementById('liveHistoryToDate').value;
+        if (!fromVal && !toVal) return items;
+        const fromD = fromVal ? new Date(fromVal + 'T00:00:00') : null;
+        const toD = toVal ? new Date(toVal + 'T23:59:59') : null;
+        return items.filter(item => {
+            const d = parseFlexibleDate(item.date);
+            if (!d) return true; // date parse na ho to us row ko hataye nahi, dikhaye rakhein
+            if (fromD && d < fromD) return false;
+            if (toD && d > toD) return false;
+            return true;
+        });
+    }
+
     // Pulls the Sheet2 audit log back into the table — useful after a page
     // refresh, since the live table itself only lives in browser memory.
     // Folder/UID come back from Sheet2 too, so Open still works on old rows.
@@ -760,7 +810,7 @@
                 return;
             }
             resetCounters();
-            const items = data.items || [];
+            const items = filterLogItemsByDateRange(data.items || []);
             let processed = 0, skipped = 0, errors = 0;
             items.forEach(item => {
                 addLogEntry(item.subject, item.from, item.company, item.amount, item.status, item.date, item.folder, item.uid);
@@ -781,12 +831,28 @@
         }
     }
 
-    function exportLiveLogToExcel() {
+    async function exportLiveLogToExcel() {
         if (!liveLogRows.length) { alert('No log entries yet — run the pipeline first.'); return; }
-        const ws = XLSX.utils.json_to_sheet(liveLogRows);
-        const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, 'Email Log');
-        XLSX.writeFile(wb, 'live_monitor_log.xlsx');
+        try {
+            const wb = new ExcelJS.Workbook();
+            const ws = wb.addWorksheet('Email Log');
+            const columns = ['Subject', 'From', 'Company', 'Amount', 'Status', 'Date'];
+            ws.addRow(columns);
+            liveLogRows.forEach(r => ws.addRow(columns.map(c => {
+                if (c !== 'Amount') return r[c];
+                const n = parseFloat((r[c] || '').toString().replace(/[^\d.-]/g, ''));
+                return isNaN(n) ? r[c] : n;
+            })));
+            styleOverviewSheet(ws, columns, ['Amount'], []);
+            const buffer = await wb.xlsx.writeBuffer();
+            const blob = new Blob([buffer], { type: 'application/octet-stream' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = 'live_monitor_log.xlsx';
+            link.click();
+        } catch (e) {
+            alert('Excel export failed: ' + e.message);
+        }
     }
 
     async function startPipeline() {
@@ -909,13 +975,51 @@
         }
     }
 
-    function downloadExcel() {
+    // Sheet Preview export me jo column poora numeric ho usse Number type me
+    // convert karta he (commas hata kar), taki Excel me woh text ki jagah
+    // asli numeric value ban kar export ho. Mix column (jisme text bhi ho)
+    // ko waise hi chodta he taki kuch galat na badle.
+    function toNumericSheetRows(headers, rows) {
+        if (!rows || !rows.length) return rows || [];
+        const colCount = headers.length;
+        const isNumericCol = new Array(colCount).fill(true);
+        for (let c = 0; c < colCount; c++) {
+            let sawValue = false;
+            for (const row of rows) {
+                const raw = (row[c] ?? '').toString().trim();
+                if (raw === '') continue;
+                sawValue = true;
+                const cleaned = raw.replace(/,/g, '');
+                if (!/^-?\d+(\.\d+)?$/.test(cleaned)) { isNumericCol[c] = false; break; }
+            }
+            if (!sawValue) isNumericCol[c] = false;
+        }
+        return rows.map(row => row.map((cell, c) => {
+            if (!isNumericCol[c]) return cell;
+            const raw = (cell ?? '').toString().trim();
+            if (raw === '') return '';
+            return Number(raw.replace(/,/g, ''));
+        }));
+    }
+
+    async function downloadExcel() {
         if (!lastSheetData) { alert('Load the sheet preview first.'); return; }
-        const wsData = [lastSheetData.headers, ...lastSheetData.rows];
-        const ws = XLSX.utils.aoa_to_sheet(wsData);
-        const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
-        XLSX.writeFile(wb, 'insurance_recovery_sheet.xlsx');
+        try {
+            const wb = new ExcelJS.Workbook();
+            const ws = wb.addWorksheet('Sheet1');
+            ws.addRow(lastSheetData.headers);
+            const numericRows = toNumericSheetRows(lastSheetData.headers, lastSheetData.rows);
+            numericRows.forEach(r => ws.addRow(r));
+            styleOverviewSheet(ws, lastSheetData.headers, [], []);
+            const buffer = await wb.xlsx.writeBuffer();
+            const blob = new Blob([buffer], { type: 'application/octet-stream' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = 'insurance_recovery_sheet.xlsx';
+            link.click();
+        } catch (e) {
+            alert('Excel export failed: ' + e.message);
+        }
     }
 
     // ---------- Analytics ----------
@@ -1352,7 +1456,7 @@
                 return {
                     columns: ['Unit', 'Total_Payers', 'Mail_Sent_Count', 'Mail_Pending', 'Actual_OS', 'Mail_OS', 'Difference', 'Deduction'],
                     currencyCols: ['Actual_OS', 'Mail_OS', 'Difference', 'Deduction'],
-                    lakhsCols: ['Mail_OS'],
+                    lakhsCols: ['Actual_OS', 'Mail_OS', 'Difference', 'Deduction'],
                     rows: d.unitSummary.map(u => ({
                         Unit: u.unit, Total_Payers: u.totalPayers, Mail_Sent_Count: u.mailSentCount,
                         Mail_Pending: u.mailPending, Actual_OS: u.actualOS, Mail_OS: u.mailOS,
@@ -1363,7 +1467,7 @@
                 return {
                     columns: ['Unit', 'Payer', 'Actual_OS', 'Mail_OS', 'Difference', 'Deduction', 'Mail_Sent'],
                     currencyCols: ['Actual_OS', 'Mail_OS', 'Difference', 'Deduction'],
-                    lakhsCols: ['Mail_OS'],
+                    lakhsCols: ['Actual_OS', 'Mail_OS', 'Difference', 'Deduction'],
                     rows: d.payerAgg.map(p => ({
                         Unit: p.unit, Payer: p.payer, Actual_OS: p.actualOS, Mail_OS: p.mailOS,
                         Difference: p.difference, Deduction: p.deduction, Mail_Sent: p.mailSent,
@@ -1373,6 +1477,7 @@
                 return {
                     columns: ['Unit', 'Payer', 'Actual_OS', 'Status'],
                     currencyCols: ['Actual_OS'],
+                    lakhsCols: ['Actual_OS'],
                     rows: d.pendingList.map(p => ({ Unit: p.unit, Payer: p.payer, Actual_OS: p.actualOS, Status: 'Pending' })),
                     groupByUnit: true,
                 };
@@ -1380,14 +1485,14 @@
                 return {
                     columns: ['Unit', 'Payer', 'Actual_OS', 'Mail_OS', 'Deduction', 'Date'],
                     currencyCols: ['Actual_OS', 'Mail_OS', 'Deduction'],
-                    lakhsCols: ['Mail_OS'],
+                    lakhsCols: ['Actual_OS', 'Mail_OS', 'Deduction'],
                     rows: d.mailSentList.map(p => ({ Unit: p.unit, Payer: p.payer, Actual_OS: p.actualOS, Mail_OS: p.mailOS, Deduction: p.deduction, Date: p.lastDate })),
                 };
             case 'top20':
                 return {
                     columns: ['Unit', 'Payer', 'Actual_OS', 'Mail_OS', 'Difference', 'Deduction', 'Mail_Sent'],
                     currencyCols: ['Actual_OS', 'Mail_OS', 'Difference', 'Deduction'],
-                    lakhsCols: ['Mail_OS'],
+                    lakhsCols: ['Actual_OS', 'Mail_OS', 'Difference', 'Deduction'],
                     rows: d.top20.map(p => ({ Unit: p.unit, Payer: p.payer, Actual_OS: p.actualOS, Mail_OS: p.mailOS, Difference: p.difference, Deduction: p.deduction, Mail_Sent: p.mailSent })),
                 };
             case 'overall_summary':
@@ -1396,15 +1501,15 @@
                     kpiRows: [
                         ['Total Units', d.kpis.totalUnits],
                         ['Total Unique Payers', d.kpis.totalPayers],
-                        ['Total Actual OS', d.kpis.totalActual],
+                        ['Total Actual OS', d.kpis.totalActual, 'lakhs'],
                         ['Total Mail OS', d.kpis.totalMail, 'lakhs'],
-                        ['Total Difference', d.kpis.totalDiff],
-                        ['Total Deduction', d.kpis.totalDeduction],
+                        ['Total Difference', d.kpis.totalDiff, 'lakhs'],
+                        ['Total Deduction', d.kpis.totalDeduction, 'lakhs'],
                         ['Overall Mail Coverage %', d.kpis.coverage.toFixed(2) + '%'],
                     ],
                     columns: ['Unit', 'Total_Payers', 'Mail_Sent_Count', 'Mail_Pending', 'Actual_OS', 'Mail_OS', 'Difference', 'Deduction'],
                     currencyCols: ['Actual_OS', 'Mail_OS', 'Difference', 'Deduction'],
-                    lakhsCols: ['Mail_OS'],
+                    lakhsCols: ['Actual_OS', 'Mail_OS', 'Difference', 'Deduction'],
                     rows: [...d.unitSummary.map(u => ({
                         Unit: u.unit, Total_Payers: u.totalPayers, Mail_Sent_Count: u.mailSentCount,
                         Mail_Pending: u.mailPending, Actual_OS: u.actualOS, Mail_OS: u.mailOS,
@@ -1480,21 +1585,22 @@
     function addPendingMailSheet(wb, rep) {
         const ws = wb.addWorksheet('Pending Mail');
         ws.addRow(rep.columns);
+        const isLakhs = rep.lakhsCols && rep.lakhsCols.includes('Actual_OS');
         let currentUnit = null, unitTotal = 0;
         const flushSubtotal = () => {
             if (currentUnit === null) return;
-            const row = ws.addRow([`Total for ${currentUnit}`, '', unitTotal, '']);
+            const row = ws.addRow([`Total for ${currentUnit}`, '', isLakhs ? toLakhs1(unitTotal) : unitTotal, '']);
             row.eachCell(cell => { cell.fill = OVERVIEW_SUBTOTAL_FILL; cell.font = { bold: true }; });
             ws.mergeCells(row.number, 1, row.number, 2);
         };
         rep.rows.forEach(r => {
             if (currentUnit !== null && r.Unit !== currentUnit) { flushSubtotal(); unitTotal = 0; }
-            ws.addRow([r.Unit, r.Payer, r.Actual_OS, r.Status]);
+            ws.addRow([r.Unit, r.Payer, isLakhs ? toLakhs1(r.Actual_OS) : r.Actual_OS, r.Status]);
             unitTotal += r.Actual_OS;
             currentUnit = r.Unit;
         });
         flushSubtotal();
-        styleOverviewSheet(ws, rep.columns, rep.currencyCols);
+        styleOverviewSheet(ws, rep.columns, rep.currencyCols, rep.lakhsCols);
         return ws;
     }
 
@@ -2053,14 +2159,10 @@
             const wb = new ExcelJS.Workbook();
             const ws = wb.addWorksheet('Report');
             ws.addRow(currentReportColumns);
-            ws.getRow(1).font = { bold: true };
             currentReportRows.forEach(r => ws.addRow(currentReportColumns.map(c =>
                 reportLakhsCols.has(c) && typeof r[c] === 'number' ? toLakhs1(r[c]) : r[c]
             )));
-            ws.columns.forEach((col, i) => {
-                col.width = 22;
-                if (reportLakhsCols.has(currentReportColumns[i])) col.numFmt = '0.0';
-            });
+            styleOverviewSheet(ws, currentReportColumns, [], Array.from(reportLakhsCols));
 
             if (reportChart) {
                 const imageBase64 = reportChart.toBase64Image();
