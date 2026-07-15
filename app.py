@@ -664,7 +664,7 @@ DOMAIN_MAP = {
     "paramounttpa.com": "Paramount Health TPA",
     "rbi.org.in": "Reserve Bank of India",
     "rajasthan.gov.in": "RGHS",
-    "gov.in": "RGHS",
+    "mppolice.gov.in": "MP Police",
     "royalsundaram.in": "Royal Sundaram Insurance",
     "sbigeneral.in": "SBI General Insurance",
     "starhealth.in": "Star Health & Allied Insurance",
