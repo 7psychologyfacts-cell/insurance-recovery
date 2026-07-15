@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Credit Collection MIS Module</title>
+    <title>Insurance Recovery Dashboard</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
@@ -2163,12 +2163,14 @@
                 matrix[rk][ck].push(num);
             });
 
-            const cornerLabel = `${headers[rowIdx]} ⟍ ${headers[colIdx]}`;
+            const isMailOs = valueIdx === MAIL_OS_FIELD_IDX;
+            const cornerLabel = `${headers[rowIdx]} ⟍ ${headers[colIdx]}${isMailOs ? ' (Lakhs)' : ''}`;
             renderHeatmapTable(
                 'reportHeatmap', cornerLabel, [...rowKeysSet], [...colKeysSet],
                 (r, c) => {
                     const arr = (matrix[r] && matrix[r][c]) || [];
-                    return valueIdx !== null ? aggregate(arr, agg) : arr.length;
+                    const val = valueIdx !== null ? aggregate(arr, agg) : arr.length;
+                    return isMailOs && valueIdx !== null ? toLakhs1(val) : val;
                 },
                 v => (Math.round(v * 100) / 100).toLocaleString()
             );
@@ -2183,12 +2185,16 @@
         if (chartType === 'histogram') {
             if (!lastSheetData || !valueIdxs || !valueIdxs.length) return;
             const firstIdx = valueIdxs[0];
-            const nums = lastSheetData.rows.map(row => parseFloat((row[firstIdx] || '0').toString().replace(/[^\d.-]/g, '')) || 0);
+            const isMailOs = firstIdx === MAIL_OS_FIELD_IDX;
+            const nums = lastSheetData.rows.map(row => {
+                const n = parseFloat((row[firstIdx] || '0').toString().replace(/[^\d.-]/g, '')) || 0;
+                return isMailOs ? toLakhs1(n) : n;
+            });
             const bins = computeHistogramBins(nums);
             if (!bins.labels.length) return;
             reportChart = new Chart(ctx, {
                 type: 'bar',
-                data: { labels: bins.labels, datasets: [{ label: `Distribution of ${lastSheetData.headers[firstIdx]}`, data: bins.data, backgroundColor: '#1b4a7a' }] },
+                data: { labels: bins.labels, datasets: [{ label: `Distribution of ${lastSheetData.headers[firstIdx]}${isMailOs ? ' (Lakhs)' : ''}`, data: bins.data, backgroundColor: '#1b4a7a' }] },
                 options: { responsive: true, maintainAspectRatio: false },
             });
             return;
@@ -2197,14 +2203,21 @@
         if (!currentReportRows || !currentReportRows.length) return;
         const labels = currentReportRows.map(r => r[groupLabel]);
 
+        // Outstanding/Mail_OS values ko chart me bhi Lakhs me hi bhejo (table
+        // jaisa hi), warna woh column raw rupees me plot hoke scale bigaad deta hai.
+        const chartVal = (r, colName) => {
+            const v = r[colName];
+            return reportLakhsCols.has(colName) && typeof v === 'number' ? toLakhs1(v) : v;
+        };
+
         let datasets;
         if (SINGLE_SERIES_TYPES.includes(chartType)) {
             const colName = valueColNames[0];
-            datasets = [{ label: colName, data: currentReportRows.map(r => r[colName]), backgroundColor: PALETTE }];
+            datasets = [{ label: reportLakhsCols.has(colName) ? `${colName} (Lakhs)` : colName, data: currentReportRows.map(r => chartVal(r, colName)), backgroundColor: PALETTE }];
         } else {
             datasets = valueColNames.map((colName, i) => ({
-                label: colName,
-                data: currentReportRows.map(r => r[colName]),
+                label: reportLakhsCols.has(colName) ? `${colName} (Lakhs)` : colName,
+                data: currentReportRows.map(r => chartVal(r, colName)),
                 backgroundColor: PALETTE[i % PALETTE.length],
                 borderColor: PALETTE[i % PALETTE.length],
             }));
