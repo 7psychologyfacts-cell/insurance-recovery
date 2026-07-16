@@ -54,17 +54,17 @@
         .log-table { width:100%; border-collapse:collapse; font-size:0.85rem; }
         .log-table th { background:#f1f5f9; padding:10px; text-align:left; font-weight:600; color:#1e293b; position:sticky; top:0; }
         .log-table td { padding:8px 10px; border-bottom:1px solid #e9edf4; }
-        .log-table th .th-filter-wrap { display:flex; align-items:center; justify-content:space-between; gap:8px; position:relative; }
+        .log-table th .th-filter-wrap { display:flex; align-items:center; justify-content:space-between; gap:8px; }
         .log-table th .th-filter-btn { background:#e2e8f0; border:1px solid #cbd5e1; color:#1b4a7a; width:20px; height:20px; min-width:20px; border-radius:5px; font-size:0.7rem; line-height:1; cursor:pointer; display:flex; align-items:center; justify-content:center; padding:0; flex-shrink:0; }
         .log-table th .th-filter-btn:hover { background:#1b4a7a; color:#fff; border-color:#1b4a7a; }
         .log-table th .th-filter-btn.active { background:#1b4a7a; color:#fff; border-color:#1b4a7a; }
         .log-table th .th-filter-btn.filtered { background:#ff8a3d; border-color:#ff8a3d; color:#fff; }
-        .th-filter-dropdown { display:none; position:absolute; top:calc(100% + 8px); left:0; min-width:190px; max-width:260px; background:#fff; border:1px solid #dce3eb; border-radius:8px; box-shadow:0 8px 24px rgba(15,23,42,0.18); z-index:100; padding:8px; font-weight:400; text-transform:none; }
+        .th-filter-dropdown { display:none; position:fixed; min-width:190px; max-width:260px; background:#fff; border:1px solid #dce3eb; border-radius:8px; box-shadow:0 8px 24px rgba(15,23,42,0.18); z-index:1000; padding:8px; font-weight:400; text-transform:none; }
         .th-filter-dropdown.open { display:block; }
         .th-filter-dropdown .th-filter-actions { display:flex; justify-content:space-between; gap:6px; margin-bottom:6px; padding-bottom:6px; border-bottom:1px solid #eef2f6; }
         .th-filter-dropdown .th-filter-actions button { background:none; border:none; color:#1b4a7a; font-size:0.72rem; cursor:pointer; padding:2px 4px; font-weight:600; }
         .th-filter-dropdown .th-filter-actions button:hover { text-decoration:underline; }
-        .th-filter-list { max-height:200px; overflow-y:auto; }
+        .th-filter-list { max-height:220px; overflow-y:auto; }
         .th-filter-list label { display:flex; align-items:center; gap:7px; padding:4px 2px; font-size:0.8rem; color:#334155; font-weight:400; cursor:pointer; }
         .th-filter-list label:hover { background:#f8fafc; }
         .th-filter-list input[type="checkbox"] { margin:0; cursor:pointer; flex-shrink:0; }
@@ -350,12 +350,12 @@
         </div>
         <div class="log-table-wrapper">
             <table class="log-table" id="logTable"><thead><tr>
-                <th><div class="th-filter-wrap"><span>Subject</span><button type="button" class="th-filter-btn" data-col="0" onclick="toggleColumnFilter(0, this)">▾</button><div class="th-filter-dropdown" id="filterDropdown-0"></div></div></th>
-                <th><div class="th-filter-wrap"><span>From</span><button type="button" class="th-filter-btn" data-col="1" onclick="toggleColumnFilter(1, this)">▾</button><div class="th-filter-dropdown" id="filterDropdown-1"></div></div></th>
-                <th><div class="th-filter-wrap"><span>Company</span><button type="button" class="th-filter-btn" data-col="2" onclick="toggleColumnFilter(2, this)">▾</button><div class="th-filter-dropdown" id="filterDropdown-2"></div></div></th>
-                <th><div class="th-filter-wrap"><span>Amount</span><button type="button" class="th-filter-btn" data-col="3" onclick="toggleColumnFilter(3, this)">▾</button><div class="th-filter-dropdown" id="filterDropdown-3"></div></div></th>
-                <th><div class="th-filter-wrap"><span>Status</span><button type="button" class="th-filter-btn" data-col="4" onclick="toggleColumnFilter(4, this)">▾</button><div class="th-filter-dropdown" id="filterDropdown-4"></div></div></th>
-                <th><div class="th-filter-wrap"><span>Date</span><button type="button" class="th-filter-btn" data-col="5" onclick="toggleColumnFilter(5, this)">▾</button><div class="th-filter-dropdown" id="filterDropdown-5"></div></div></th>
+                <th><div class="th-filter-wrap"><span>Subject</span><button type="button" class="th-filter-btn" data-col="0" onclick="toggleColumnFilter(0, this)">▾</button></div></th>
+                <th><div class="th-filter-wrap"><span>From</span><button type="button" class="th-filter-btn" data-col="1" onclick="toggleColumnFilter(1, this)">▾</button></div></th>
+                <th><div class="th-filter-wrap"><span>Company</span><button type="button" class="th-filter-btn" data-col="2" onclick="toggleColumnFilter(2, this)">▾</button></div></th>
+                <th><div class="th-filter-wrap"><span>Amount</span><button type="button" class="th-filter-btn" data-col="3" onclick="toggleColumnFilter(3, this)">▾</button></div></th>
+                <th><div class="th-filter-wrap"><span>Status</span><button type="button" class="th-filter-btn" data-col="4" onclick="toggleColumnFilter(4, this)">▾</button></div></th>
+                <th><div class="th-filter-wrap"><span>Date</span><button type="button" class="th-filter-btn" data-col="5" onclick="toggleColumnFilter(5, this)">▾</button></div></th>
                 <th>Action</th>
             </tr></thead><tbody></tbody></table>
         </div>
@@ -744,6 +744,8 @@
     // ---------- Email Log: per-column filter dropdowns (Subject/From/Company/Amount/Status/Date) ----------
     const FILTER_COLUMNS = [0, 1, 2, 3, 4, 5];
     let columnFilters = {}; // colIndex -> Set of selected values. Absent key = no filter (sab dikhega).
+    let openFilterColIndex = null;
+    let openFilterBtnEl = null;
 
     function getColumnCellText(row, colIndex) {
         const cell = row.cells[colIndex];
@@ -757,15 +759,57 @@
         return Array.from(set).sort((a, b) => a.localeCompare(b, 'en', { numeric: true, sensitivity: 'base' }));
     }
 
+    // Ek hi shared dropdown panel <body> ke seedhe andar rakhte hain (fixed position),
+    // taaki .log-table-wrapper ka overflow-y:auto ise clip/chota na kare.
+    function getSharedFilterDropdown() {
+        let dropdown = document.getElementById('sharedColumnFilterDropdown');
+        if (!dropdown) {
+            dropdown = document.createElement('div');
+            dropdown.id = 'sharedColumnFilterDropdown';
+            dropdown.className = 'th-filter-dropdown';
+            document.body.appendChild(dropdown);
+        }
+        return dropdown;
+    }
+
+    function positionFilterDropdown(dropdown, btnEl) {
+        const rect = btnEl.getBoundingClientRect();
+        const dropdownWidth = 260;
+        let left = rect.left;
+        if (left + dropdownWidth > window.innerWidth - 8) {
+            left = Math.max(8, window.innerWidth - dropdownWidth - 8);
+        }
+        let top = rect.bottom + 6;
+        dropdown.style.left = left + 'px';
+        dropdown.style.top = top + 'px';
+        // Agar neeche jagah kam ho to upar khol do
+        requestAnimationFrame(() => {
+            const dRect = dropdown.getBoundingClientRect();
+            if (dRect.bottom > window.innerHeight - 8) {
+                dropdown.style.top = Math.max(8, rect.top - dRect.height - 6) + 'px';
+            }
+        });
+    }
+
+    function closeColumnFilterDropdown() {
+        const dropdown = document.getElementById('sharedColumnFilterDropdown');
+        if (dropdown) dropdown.classList.remove('open');
+        if (openFilterBtnEl) openFilterBtnEl.classList.remove('active');
+        openFilterColIndex = null;
+        openFilterBtnEl = null;
+    }
+
     function toggleColumnFilter(colIndex, btnEl) {
-        const dropdown = document.getElementById('filterDropdown-' + colIndex);
-        const isOpen = dropdown.classList.contains('open');
-        document.querySelectorAll('.th-filter-dropdown.open').forEach(d => d.classList.remove('open'));
-        document.querySelectorAll('.th-filter-btn.active').forEach(b => b.classList.remove('active'));
-        if (isOpen) return;
+        const dropdown = getSharedFilterDropdown();
+        const isSameOpen = dropdown.classList.contains('open') && openFilterColIndex === colIndex;
+        closeColumnFilterDropdown();
+        if (isSameOpen) return;
         buildFilterDropdown(colIndex, dropdown);
+        positionFilterDropdown(dropdown, btnEl);
         dropdown.classList.add('open');
         btnEl.classList.add('active');
+        openFilterColIndex = colIndex;
+        openFilterBtnEl = btnEl;
     }
 
     function buildFilterDropdown(colIndex, dropdown) {
@@ -813,13 +857,13 @@
     }
 
     function setAllColumnFilter(colIndex, checkAll) {
-        const dropdown = document.getElementById('filterDropdown-' + colIndex);
+        const dropdown = document.getElementById('sharedColumnFilterDropdown');
         dropdown.querySelectorAll('input[type="checkbox"]').forEach(cb => { cb.checked = checkAll; });
         onColumnFilterCheckboxChange(colIndex);
     }
 
     function onColumnFilterCheckboxChange(colIndex) {
-        const dropdown = document.getElementById('filterDropdown-' + colIndex);
+        const dropdown = document.getElementById('sharedColumnFilterDropdown');
         const checkboxes = Array.from(dropdown.querySelectorAll('input[type="checkbox"]'));
         const checkedVals = checkboxes.filter(cb => cb.checked).map(cb => cb.dataset.value);
         if (checkedVals.length === checkboxes.length) {
@@ -861,11 +905,17 @@
         observer.observe(tbody, { childList: true });
     })();
 
+    // Table wrapper scroll hone par dropdown ki position galat ho sakti he, isliye band kar dete hain.
+    (function initLogTableFilterScrollClose() {
+        const wrapper = document.querySelector('.log-table-wrapper');
+        if (wrapper) wrapper.addEventListener('scroll', closeColumnFilterDropdown);
+        window.addEventListener('resize', closeColumnFilterDropdown);
+    })();
+
     // Dropdown ke bahar click karne par use band kar do.
     document.addEventListener('click', function (e) {
-        if (e.target.closest && e.target.closest('.th-filter-wrap')) return;
-        document.querySelectorAll('.th-filter-dropdown.open').forEach(d => d.classList.remove('open'));
-        document.querySelectorAll('.th-filter-btn.active').forEach(b => b.classList.remove('active'));
+        if (e.target.closest && (e.target.closest('.th-filter-wrap') || e.target.closest('#sharedColumnFilterDropdown'))) return;
+        closeColumnFilterDropdown();
     });
 
     // Attachments jo currently email preview modal me khuli hui mail ke hain —
